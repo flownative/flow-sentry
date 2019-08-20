@@ -1,0 +1,27 @@
+{
+    "name": "flownative/sentry",
+    "type": "neos-package",
+    "description": "A Sentry integration for Neos Flow",
+    "authors": [
+        {
+            "name": "Robert Lemke",
+            "email": "robert@flownative.com",
+            "homepage": "https://www.flownative.com",
+            "role": "Developer"
+        }
+    ],
+    "license": [
+        "MIT"
+    ],
+    "require": {
+        "neos/flow": "^5.0 || @dev",
+        "sentry/sentry": "^2.1",
+        "php-http/guzzle6-adapter": "^v2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Flownative\\Sentry": "Classes"
+        }
+    },
+    "extra": {}
+}

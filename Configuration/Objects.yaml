@@ -1,0 +1,3 @@
+Flownative\Sentry\Context\UserContextInterface:
+  scope: singleton
+  className: Flownative\Sentry\Context\DefaultUserContextService
