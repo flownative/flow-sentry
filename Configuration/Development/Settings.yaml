@@ -2,4 +2,4 @@ Neos:
   Flow:
     error:
       exceptionHandler:
-        className: Flownative\Sentry\DebugExceptionHandler
+        className: Flownative\Sentry\Exception\DebugExceptionHandler

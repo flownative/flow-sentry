@@ -8,7 +8,6 @@ This [Flow](https://flow.neos.io) package allows you to automate reporting of er
 
 ## Key Features
 
-…
 
 ## Installation
 

@@ -1,0 +1,5 @@
+Neos:
+  Flow:
+    error:
+      exceptionHandler:
+        className: Flownative\Sentry\Exception\ProductionExceptionHandler

@@ -17,8 +17,6 @@ use Flownative\Sentry\SentryClientTrait;
 use Neos\Flow\Log\Backend\FileBackend;
 use Sentry\Severity;
 
-/**
- */
 class SentryFileBackend extends FileBackend
 {
     use SentryClientTrait;
@@ -53,12 +51,7 @@ class SentryFileBackend extends FileBackend
                         $sentrySeverity = Severity::info();
 
                 }
-                $sentryClient->captureMessage($message, $sentrySeverity, [
-                    'flow_package_key' => $packageKey,
-                    'class_name' => $className,
-                    'method_name' => $methodName,
-                    'additional_data' => $additionalData
-                ]);
+                $sentryClient->captureMessage($message, $sentrySeverity, ['Additional Data' => $additionalData]);
             }
         } catch (\Throwable $e) {
         }

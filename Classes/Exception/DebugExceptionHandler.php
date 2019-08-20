@@ -16,7 +16,7 @@ namespace Flownative\Sentry\Exception;
 use Flownative\Sentry\SentryClientTrait;
 use Throwable;
 
-class ProductionExceptionHandler extends \Neos\Flow\Error\ProductionExceptionHandler
+class DebugExceptionHandler extends \Neos\Flow\Error\DebugExceptionHandler
 {
     use SentryClientTrait;
 
@@ -47,5 +47,4 @@ class ProductionExceptionHandler extends \Neos\Flow\Error\ProductionExceptionHan
         }
         parent::echoExceptionCli($exception);
     }
-
 }

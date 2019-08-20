@@ -8,20 +8,10 @@ Neos:
   Flow:
     log:
       systemLogger:
-        logger: Neos\Flow\Log\Logger
         backend: Flownative\Sentry\Log\SentryFileBackend
-        backendOptions:
-          logFileURL: '%FLOW_PATH_DATA%Logs/System.log'
-          createParentDirectories: true
-          severityThreshold: '%LOG_DEBUG%'
-          maximumLogFileSize: 10485760
-          logFilesToKeep: 1
-          logMessageOrigin: false
-
-          dsn: "%env:SENTRY_DSN%"
-          environment: "%env:SENTRY_ENVIRONMENT%"
-          release: "%env:SENTRY_RELEASE%"
 
     error:
       exceptionHandler:
-        className: Flownative\Sentry\Flow\Exception\ProductionExceptionHandler
+        defaultRenderingOptions:
+          # Disable logging of exceptions, because they are already processed by Sentry
+          logException: false

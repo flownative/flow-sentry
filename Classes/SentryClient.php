@@ -18,6 +18,7 @@ use Flownative\Sentry\Context\UserContextServiceInterface;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
+use Neos\Flow\Log\PsrSystemLoggerInterface;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
 use Sentry\Severity;
@@ -46,22 +47,16 @@ class SentryClient
     protected $release;
 
     /**
+     * @Flow\Inject
      * @var UserContextServiceInterface
      */
     protected $userContextService;
 
     /**
-     * @var bool
+     * @Flow\Inject
+     * @var PsrSystemLoggerInterface
      */
-    protected $temporarilyIgnoreNewMessages = false;
-
-    /**
-     * @param UserContextServiceInterface $userContextService
-     */
-    public function injectUserContextService(UserContextServiceInterface $userContextService): void
-    {
-        $this->userContextService = $userContextService;
-    }
+    protected $logger;
 
     /**
      * @param array $settings
@@ -81,7 +76,10 @@ class SentryClient
         if (empty($this->dsn)) {
             return;
         }
-        \Sentry\init(['dsn' => $this->dsn]);
+        \Sentry\init([
+            'dsn' => $this->dsn,
+            'default_integrations' => false
+        ]);
 
         $client = Hub::getCurrent()->getClient();
         if (!$client) {
@@ -93,6 +91,7 @@ class SentryClient
         $options->setRelease($this->release);
         $options->setProjectRoot(FLOW_PATH_ROOT);
         $options->setPrefixes([FLOW_PATH_ROOT]);
+        $options->setSampleRate(1);
         $options->setInAppExcludedPaths([
             FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
             FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
@@ -103,8 +102,18 @@ class SentryClient
         $options->setAttachStacktrace(true);
 
         $this->setTags();
+    }
 
-        $this->emitSentryClientCreated();
+    /**
+     * @return void
+     */
+    private function setTags(): void
+    {
+        Hub::getCurrent()->configureScope(static function (Scope $scope): void {
+            $scope->setTag('flow_version', FLOW_VERSION_BRANCH);
+            $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
+            $scope->setTag('php_version', PHP_VERSION);
+        });
     }
 
     /**
@@ -120,21 +129,31 @@ class SentryClient
             return;
         }
 
-        // Ignore messages which might be captured by a logger which tries to log the exception we
-        // are currently handling:
-        $this->temporarilyIgnoreNewMessages = true;
-
         if ($throwable instanceof WithReferenceCodeInterface) {
-            $extraData['referenceCode'] = $throwable->getReferenceCode();
+            $extraData['Reference Code'] = $throwable->getReferenceCode();
         }
-        $tags['code'] = (string)$throwable->getCode();
-        $tags['unlogisch'] = true;
+        $extraData['PHP Process Inode'] = getmyinode();
+        $extraData['PHP Process PID'] = getmypid();
+        $extraData['PHP Process UID'] = getmyuid();
+        $extraData['PHP Process GID'] = getmygid();
+        $extraData['PHP Process User'] = get_current_user();
+
+        $tags['exception_code'] = (string)$throwable->getCode();
 
         $this->configureScope($extraData, $tags);
+        $sentryEventId = \Sentry\captureException($throwable);
 
-        \Sentry\captureException($throwable);
-
-        $this->temporarilyIgnoreNewMessages = false;
+        if ($this->logger) {
+            $this->logger->critical(
+                sprintf(
+                    'Exception %s: %s (Ref: %s | Sentry: %s)',
+                    $throwable->getCode(),
+                    $throwable->getMessage(),
+                    ($throwable instanceof WithReferenceCodeInterface ? $throwable->getReferenceCode() : '-'),
+                    $sentryEventId
+                )
+            );
+        }
     }
 
     /**
@@ -143,31 +162,16 @@ class SentryClient
      * @param string $message The message to capture, for example a log message
      * @param Severity $severity The severity
      * @param array $extraData Additional data passed to the Sentry event
+     * @param array $tags
      */
-    public function captureMessage(string $message, Severity $severity, array $extraData = []): void
+    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): void
     {
-        return;
-        if (empty($this->dsn) || $this->temporarilyIgnoreNewMessages) {
+        if (empty($this->dsn)) {
             return;
         }
-        $this->configureScope($extraData, []);
+
+        $this->configureScope($extraData, $tags);
         \Sentry\captureMessage($message, $severity);
-    }
-
-    /**
-     * Set tags fore the Sentry context
-     * @return void
-     */
-    private function setTags(): void
-    {
-        $hub = Hub::getCurrent();
-        $hub->configureScope(static function (Scope $scope): void {
-            $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
-            $scope->setTag('flow_version', FLOW_VERSION_BRANCH);
-            $scope->setTag('php_version', PHP_VERSION);
-            $scope->setTag('foo', 'bar');
-        });
-
     }
 
     /**
@@ -177,32 +181,21 @@ class SentryClient
      */
     private function configureScope(array $extraData, array $tags): void
     {
-        $objectManager = Bootstrap::$staticObjectManager;
-        $securityContext = $objectManager->get(SecurityContext::class);
+        $securityContext = Bootstrap::$staticObjectManager->get(SecurityContext::class);
         if ($securityContext instanceof SecurityContext && $securityContext->isInitialized()) {
             $userContext = $this->userContextService->getUserContext($securityContext);
         } else {
             $userContext = new UserContext();
         }
 
-        $userContext->setEmail('foo@example.com');
-
         Hub::getCurrent()->configureScope(static function (Scope $scope) use ($userContext, $extraData, $tags): void {
-            $scope->setUser($userContext->toArray());
             foreach ($extraData as $extraDataKey => $extraDataValue) {
                 $scope->setExtra($extraDataKey, $extraDataValue);
             }
             foreach ($tags as $tagKey => $tagValue) {
                 $scope->setTag($tagKey, $tagValue);
             }
+            $scope->setUser($userContext->toArray());
         });
-    }
-
-    /**
-     * @Flow\Signal
-     * @return void
-     */
-    public function emitSentryClientCreated()
-    {
     }
 }
