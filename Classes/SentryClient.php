@@ -21,6 +21,9 @@ use Neos\Flow\Error\WithReferenceCodeInterface;
 use Neos\Flow\Log\PsrSystemLoggerInterface;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
+use Psr\Log\LogLevel;
+use Sentry\Integration\RequestIntegration;
+use Sentry\Options;
 use Sentry\Severity;
 use Sentry\State\Hub;
 use Sentry\State\Scope;
@@ -78,29 +81,26 @@ class SentryClient
         }
         \Sentry\init([
             'dsn' => $this->dsn,
-            'default_integrations' => false
+            'environment' => $this->environment,
+            'release' => $this->release,
+            'project_root' => FLOW_PATH_ROOT,
+            'prefixes' => [FLOW_PATH_ROOT],
+            'sample_rate' => 1,
+            'in_app_exclude' => [
+                FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
+                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
+                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
+                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
+                FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
+            ],
+            'default_integrations' => false,
+            'attach_stacktrace' => true
         ]);
 
         $client = Hub::getCurrent()->getClient();
         if (!$client) {
             return;
         }
-
-        $options = $client->getOptions();
-        $options->setEnvironment($this->environment);
-        $options->setRelease($this->release);
-        $options->setProjectRoot(FLOW_PATH_ROOT);
-        $options->setPrefixes([FLOW_PATH_ROOT]);
-        $options->setSampleRate(1);
-        $options->setInAppExcludedPaths([
-            FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
-            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
-            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
-            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
-            FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
-        ]);
-        $options->setAttachStacktrace(true);
-
         $this->setTags();
     }
 
@@ -113,7 +113,16 @@ class SentryClient
             $scope->setTag('flow_version', FLOW_VERSION_BRANCH);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
             $scope->setTag('php_version', PHP_VERSION);
+            $scope->setFingerprint(['test-fingerprint-' . time()]);
         });
+    }
+
+    /**
+     * @return Options
+     */
+    public function getOptions(): Options
+    {
+        return Hub::getCurrent()->getClient()->getOptions();
     }
 
     /**
@@ -163,15 +172,29 @@ class SentryClient
      * @param Severity $severity The severity
      * @param array $extraData Additional data passed to the Sentry event
      * @param array $tags
+     * @return string|null
      */
-    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): void
+    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): ?string
     {
         if (empty($this->dsn)) {
-            return;
+            $this->logger->warning(sprintf('Sentry: Failed capturing message, because no Sentry DSN was set. Please check your settings.'));
+            return null;
         }
 
         $this->configureScope($extraData, $tags);
-        \Sentry\captureMessage($message, $severity);
+        $sentryEventId = \Sentry\captureMessage($message, $severity);
+        if ($this->logger) {
+            $this->logger->log(
+                (string)$severity,
+                sprintf(
+                    '%s (Sentry: %s)',
+                    $message,
+                    $sentryEventId
+                )
+            );
+        }
+
+        return $sentryEventId;
     }
 
     /**

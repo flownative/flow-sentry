@@ -13,38 +13,18 @@ namespace Flownative\Sentry\Command;
  * source code.
  */
 
-use Neos\Flow\Annotations\InjectConfiguration;
+use Flownative\Sentry\SentryClient;
+use Neos\Flow\Annotations\Inject;
 use Neos\Flow\Cli\CommandController;
 use Sentry\Severity;
-use Sentry\State\Hub;
-use Sentry\State\Scope;
 
 final class SentryCommandController extends CommandController
 {
-
     /**
-     * @InjectConfiguration(path="dsn")
-     * @var string
+     * @Inject
+     * @var SentryClient
      */
-    protected $dsn;
-
-    /**
-     * @InjectConfiguration(path="environment")
-     * @var string
-     */
-    protected $environment;
-
-    /**
-     * @InjectConfiguration(path="release")
-     * @var string
-     */
-    protected $release;
-
-    /**
-     * @InjectConfiguration(path="clientOptions")
-     * @var string
-     */
-    protected $clientOptions;
+    protected $sentryClient;
 
     /**
      * Test the setup
@@ -58,35 +38,28 @@ final class SentryCommandController extends CommandController
     {
         $this->output->outputLine('<b>Testing Sentry setup …</b>');
         $this->output->outputLine('Using the following configuration:');
+
+        $options = $this->sentryClient->getOptions();
+
         $this->output->outputTable([
-            ['DSN', $this->dsn],
-            ['Environment', $this->environment],
-            ['Release', $this->release]
+            ['DSN', $options->getDsn()],
+            ['Environment', $options->getEnvironment()],
+            ['Release', $options->getRelease()],
+            ['Project Id', $options->getProjectId()],
+            ['Sample Rate', $options->getSampleRate()]
         ], [
             'Option',
             'Value'
         ]);
 
-        \Sentry\init(['dsn' => $this->dsn]);
+        $eventId = $this->sentryClient->captureMessage(
+            'Flownative Sentry Plugin Test',
+            Severity::debug(),
+            [
+                'Flownative Sentry Client Version' => 'dev'
+            ]
+        );
 
-        if (!$client = Hub::getCurrent()->getClient()) {
-            $this->outputLine('<error>Failed initializing the Sentry SDK client</error>');
-            exit (1);
-        }
-
-        $options = $client->getOptions();
-        $options->setEnvironment($this->environment);
-        $options->setRelease($this->release);
-        $options->setProjectRoot(FLOW_PATH_ROOT);
-        $options->setPrefixes([FLOW_PATH_ROOT]);
-
-        \Sentry\configureScope(function(Scope $scope): void {
-            $scope->setTag('test', 'test');
-            $scope->setLevel(Severity::debug());
-        });
-
-        $client->captureMessage('Flownative Sentry Plugin Test', Severity::debug());
-
-        $this->output->outputLine('<success>A message was sent to Sentry</success>');
+        $this->output->outputLine('<success>A message was sent to Sentry</success> Event ID: #%s', [$eventId]);
     }
 }
