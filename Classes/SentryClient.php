@@ -22,8 +22,6 @@ use Neos\Flow\Log\PsrSystemLoggerInterface;
 use Neos\Flow\Package\PackageManagerInterface;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
-use Psr\Log\LogLevel;
-use Sentry\Integration\RequestIntegration;
 use Sentry\Options;
 use Sentry\Severity;
 use Sentry\State\Hub;
@@ -135,7 +133,10 @@ class SentryClient
      */
     public function getOptions(): Options
     {
-        return Hub::getCurrent()->getClient()->getOptions();
+        if ($client = Hub::getCurrent()->getClient()) {
+            return $client->getOptions();
+        }
+        return new Options();
     }
 
     /**
@@ -190,7 +191,9 @@ class SentryClient
     public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): ?string
     {
         if (empty($this->dsn)) {
-            $this->logger->warning(sprintf('Sentry: Failed capturing message, because no Sentry DSN was set. Please check your settings.'));
+            if ($this->logger) {
+                $this->logger->warning(sprintf('Sentry: Failed capturing message, because no Sentry DSN was set. Please check your settings.'));
+            }
             return null;
         }
 
