@@ -19,6 +19,7 @@ use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
 use Neos\Flow\Log\PsrSystemLoggerInterface;
+use Neos\Flow\Package\PackageManagerInterface;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
 use Psr\Log\LogLevel;
@@ -60,6 +61,12 @@ class SentryClient
      * @var PsrSystemLoggerInterface
      */
     protected $logger;
+
+    /**
+     * @Flow\Inject
+     * @var PackageManagerInterface
+     */
+    protected $packageManager;
 
     /**
      * @param array $settings
@@ -109,8 +116,14 @@ class SentryClient
      */
     private function setTags(): void
     {
-        Hub::getCurrent()->configureScope(static function (Scope $scope): void {
-            $scope->setTag('flow_version', FLOW_VERSION_BRANCH);
+        $flowVersion = FLOW_VERSION_BRANCH;
+        if ($this->packageManager) {
+            $flowPackage = $this->packageManager->getPackage('Neos.Flow');
+            $flowVersion = $flowPackage->getInstalledVersion();
+        }
+
+        Hub::getCurrent()->configureScope(static function (Scope $scope) use ($flowVersion): void {
+            $scope->setTag('flow_version', $flowVersion);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
             $scope->setTag('php_version', PHP_VERSION);
             $scope->setFingerprint(['test-fingerprint-' . time()]);
