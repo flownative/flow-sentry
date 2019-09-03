@@ -22,6 +22,11 @@ class SentryFileBackend extends FileBackend
     use SentryClientTrait;
 
     /**
+     * @var bool
+     */
+    private $capturingMessage = false;
+
+    /**
      * @param string $message
      * @param int $severity
      * @param null $additionalData
@@ -32,7 +37,13 @@ class SentryFileBackend extends FileBackend
      */
     public function append($message, $severity = LOG_INFO, $additionalData = null, $packageKey = null, $className = null, $methodName = null): void
     {
+        if ($this->capturingMessage) {
+            return;
+        }
+
         try {
+            $this->capturingMessage = true;
+
             $sentryClient = self::getSentryClient();
             if ($severity <= LOG_NOTICE && $sentryClient) {
                 switch ($severity) {
@@ -51,11 +62,14 @@ class SentryFileBackend extends FileBackend
                         $sentrySeverity = Severity::info();
 
                 }
+
                 $sentryClient->captureMessage($message, $sentrySeverity, ['Additional Data' => $additionalData]);
             }
             parent::append($message, $severity, $additionalData, $packageKey, $className, $methodName);
         } catch (\Throwable $throwable) {
             echo sprintf('SentryFileBackend: %s (%s)', $throwable->getMessage(), $throwable->getCode());
+        } finally {
+            $this->capturingMessage = false;
         }
     }
 }
