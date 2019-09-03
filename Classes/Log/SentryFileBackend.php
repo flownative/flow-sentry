@@ -53,8 +53,9 @@ class SentryFileBackend extends FileBackend
                 }
                 $sentryClient->captureMessage($message, $sentrySeverity, ['Additional Data' => $additionalData]);
             }
-        } catch (\Throwable $e) {
+            parent::append($message, $severity, $additionalData, $packageKey, $className, $methodName);
+        } catch (\Throwable $throwable) {
+            echo sprintf('SentryFileBackend: %s (%s)', $throwable->getMessage(), $throwable->getCode());
         }
-        parent::append($message, $severity, $additionalData, $packageKey, $className, $methodName);
     }
 }

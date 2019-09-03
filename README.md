@@ -20,4 +20,14 @@ $ composer require flownative/sentry:1.*
 
 ## Configuration
 
-…
+You need to at least specify a DSN to be used as a logging target. Apart from that, you
+can configure the Sentry environment and release. All options can either be set in the
+Flow settings or, more conveniently, by setting the respective environment variables.
+
+```yaml
+Flownative:
+  Sentry:
+    dsn: "%env:SENTRY_DSN%"
+    environment: "%env:SENTRY_ENVIRONMENT%"
+    release: "%env:SENTRY_RELEASE%"
+```

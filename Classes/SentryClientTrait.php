@@ -14,6 +14,7 @@ namespace Flownative\Sentry;
  */
 
 use Neos\Flow\Core\Bootstrap;
+use Neos\Flow\ObjectManagement\CompileTimeObjectManager;
 use Neos\Flow\ObjectManagement\ObjectManagerInterface;
 
 trait SentryClientTrait
@@ -23,10 +24,9 @@ trait SentryClientTrait
      */
     protected static function getSentryClient(): ?SentryClient
     {
-        if (!Bootstrap::$staticObjectManager instanceof ObjectManagerInterface) {
+        if (!Bootstrap::$staticObjectManager instanceof ObjectManagerInterface || Bootstrap::$staticObjectManager instanceof CompileTimeObjectManager) {
             return null;
         }
-
         return Bootstrap::$staticObjectManager->get(SentryClient::class);
     }
 }
