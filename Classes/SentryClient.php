@@ -196,6 +196,10 @@ class SentryClient
             return null;
         }
 
+        if (preg_match('/Sentry: [0-9a-f]{32}/', $message) === 1) {
+            return null;
+        }
+
         $this->configureScope($extraData, $tags);
         $sentryEventId = \Sentry\captureMessage($message, $severity);
         if ($this->logger) {
