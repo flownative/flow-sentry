@@ -18,6 +18,7 @@ use Flownative\Sentry\Context\UserContextServiceInterface;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
+use Neos\Flow\Exception;
 use Neos\Flow\Log\PsrSystemLoggerInterface;
 use Neos\Flow\Package\PackageManagerInterface;
 use Neos\Flow\Security\Context as SecurityContext;
@@ -163,7 +164,14 @@ class SentryClient
         $tags['exception_code'] = (string)$throwable->getCode();
 
         $this->configureScope($extraData, $tags);
-        $sentryEventId = \Sentry\captureException($throwable);
+        if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
+            Hub::getCurrent()->configureScope(static function (Scope $scope): void {
+                $scope->setLevel(Severity::warning());
+            });
+            $sentryEventId = \Sentry\captureException($throwable);
+        } else {
+            $sentryEventId = \Sentry\captureException($throwable);
+        }
 
         if ($this->logger) {
             $this->logger->critical(
@@ -238,6 +246,7 @@ class SentryClient
                 $scope->setTag($tagKey, $tagValue);
             }
             $scope->setUser($userContext->toArray());
+            $scope->setLevel(null);
         });
     }
 }
