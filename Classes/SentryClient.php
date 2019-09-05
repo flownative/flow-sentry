@@ -124,7 +124,6 @@ class SentryClient
             $scope->setTag('flow_version', $flowVersion);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
             $scope->setTag('php_version', PHP_VERSION);
-            $scope->setFingerprint(['test-fingerprint-' . time()]);
         });
     }
 
