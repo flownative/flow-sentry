@@ -15,7 +15,7 @@ The Sentry integration is installed as a regular Flow package via Composer. For 
 `flownative/sentry` into the dependencies of your Flow or Neos distribution:
 
 ```bash
-$ composer require flownative/sentry:1.*
+$ composer require flownative/sentry
 ```
 
 ## Configuration
