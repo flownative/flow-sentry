@@ -14,7 +14,7 @@
         "MIT"
     ],
     "require": {
-        "neos/flow": "^5.0 || @dev",
+        "neos/flow": "^5.0 || ^6.0 || @dev",
         "sentry/sentry": "^2.2",
         "php-http/guzzle6-adapter": "^v2.0"
     },
