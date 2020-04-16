@@ -23,6 +23,7 @@ use Neos\Flow\Log\PsrSystemLoggerInterface;
 use Neos\Flow\Package\PackageManagerInterface;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
+use Psr\Log\LogLevel;
 use Sentry\Options;
 use Sentry\Severity;
 use Sentry\State\Hub;
@@ -50,6 +51,11 @@ class SentryClient
     protected $release;
 
     /**
+     * @var array
+     */
+    protected $excludeExceptionTypes = [];
+
+    /**
      * @Flow\Inject
      * @var UserContextServiceInterface
      */
@@ -75,6 +81,7 @@ class SentryClient
         $this->dsn = $settings['dsn'] ?? '';
         $this->environment = $settings['environment'] ?? '';
         $this->release = $settings['release'] ?? '';
+        $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
     }
 
     /**
@@ -163,18 +170,25 @@ class SentryClient
 
         $tags['exception_code'] = (string)$throwable->getCode();
 
-        $this->configureScope($extraData, $tags);
-        if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
-            Hub::getCurrent()->configureScope(static function (Scope $scope): void {
-                $scope->setLevel(Severity::warning());
-            });
-            $sentryEventId = \Sentry\captureException($throwable);
+        $captureException = (!in_array(get_class($throwable), $this->excludeExceptionTypes, true));
+
+        if ($captureException) {
+            $this->configureScope($extraData, $tags);
+            if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
+                Hub::getCurrent()->configureScope(static function (Scope $scope): void {
+                    $scope->setLevel(Severity::warning());
+                });
+                $sentryEventId = \Sentry\captureException($throwable);
+            } else {
+                $sentryEventId = \Sentry\captureException($throwable);
+            }
         } else {
-            $sentryEventId = \Sentry\captureException($throwable);
+            $sentryEventId = 'ignored';
         }
 
         if ($this->logger) {
-            $this->logger->critical(
+            $this->logger->log(
+                ($captureException ? LogLevel::CRITICAL : LogLevel::NOTICE),
                 sprintf(
                     'Exception %s: %s (Ref: %s | Sentry: %s)',
                     $throwable->getCode(),

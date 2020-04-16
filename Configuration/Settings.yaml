@@ -3,6 +3,8 @@ Flownative:
     dsn: "%env:SENTRY_DSN%"
     environment: "%env:SENTRY_ENVIRONMENT%"
     release: "%env:SENTRY_RELEASE%"
+    capture:
+      excludeExceptionTypes: []
 
 Neos:
   Flow:

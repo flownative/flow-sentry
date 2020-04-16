@@ -31,3 +31,22 @@ Flownative:
     environment: "%env:SENTRY_ENVIRONMENT%"
     release: "%env:SENTRY_RELEASE%"
 ```
+
+Throwables (that includes exceptions and runtime errors) are logged as Sentry events. 
+You may specify a list of exceptions which should not be recorded. If such an exception
+is thrown, it will only be logged as a "notice".
+
+```yaml
+Flownative:
+  Sentry:
+    capture:
+      excludeExceptionTypes:
+        - 'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException'
+```
+
+If an ignore exception is handled by this Sentry client, it is logged similar to the
+following message:
+
+```
+… NOTICE Exception 12345: The exception message (Ref: 202004161706040c28ae | Sentry: ignored)
+```
