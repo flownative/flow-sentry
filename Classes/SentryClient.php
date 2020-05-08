@@ -20,7 +20,7 @@ use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
 use Neos\Flow\Exception;
 use Neos\Flow\Log\PsrSystemLoggerInterface;
-use Neos\Flow\Package\PackageManagerInterface;
+use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
 use Psr\Log\LogLevel;
@@ -69,7 +69,7 @@ class SentryClient
 
     /**
      * @Flow\Inject
-     * @var PackageManagerInterface
+     * @var PackageManager
      */
     protected $packageManager;
 
