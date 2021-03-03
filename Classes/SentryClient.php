@@ -25,6 +25,7 @@ use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
 use Psr\Log\LogLevel;
 use Sentry\Options;
+use Sentry\SentrySdk;
 use Sentry\Severity;
 use Sentry\State\Hub;
 use Sentry\State\Scope;
@@ -92,12 +93,11 @@ class SentryClient
         if (empty($this->dsn)) {
             return;
         }
+
         \Sentry\init([
             'dsn' => $this->dsn,
             'environment' => $this->environment,
             'release' => $this->release,
-            'project_root' => FLOW_PATH_ROOT,
-            'prefixes' => [FLOW_PATH_ROOT],
             'sample_rate' => 1,
             'in_app_exclude' => [
                 FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
@@ -110,7 +110,7 @@ class SentryClient
             'attach_stacktrace' => true
         ]);
 
-        $client = Hub::getCurrent()->getClient();
+        $client = SentrySdk::getCurrentHub()->getClient();
         if (!$client) {
             return;
         }
