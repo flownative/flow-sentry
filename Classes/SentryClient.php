@@ -19,10 +19,10 @@ use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
 use Neos\Flow\Exception;
-use Neos\Flow\Log\PsrSystemLoggerInterface;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
+use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 use Sentry\EventId;
 use Sentry\Options;
@@ -65,7 +65,7 @@ class SentryClient
 
     /**
      * @Flow\Inject
-     * @var PsrSystemLoggerInterface
+     * @var LoggerInterface
      */
     protected $logger;
 

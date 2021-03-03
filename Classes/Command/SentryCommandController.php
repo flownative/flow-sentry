@@ -13,10 +13,10 @@ namespace Flownative\Sentry\Command;
  * source code.
  */
 
+use Flownative\Sentry\Exception\SentryClientTestException;
 use Flownative\Sentry\SentryClient;
 use Neos\Flow\Annotations\Inject;
 use Neos\Flow\Cli\CommandController;
-use RuntimeException;
 use Sentry\Severity;
 
 final class SentryCommandController extends CommandController
@@ -71,10 +71,11 @@ final class SentryCommandController extends CommandController
 
     /**
      * @param string $someArgument
+     * @throws SentryClientTestException
      */
     protected function throwException(string $someArgument): void
     {
-        $previousException = new \InvalidArgumentException('Test "previous" exception thrown by the SentryCommandController', 1614759554);
-        throw new RuntimeException('Test exception in SentryCommandController', 1614759519, $previousException);
+        $previousException = new \RuntimeException('Test "previous" exception thrown by the SentryCommandController', 1614759554);
+        throw new SentryClientTestException('Test exception in SentryCommandController', 1614759519, $previousException);
     }
 }
