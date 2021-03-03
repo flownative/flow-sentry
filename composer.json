@@ -15,7 +15,7 @@
     ],
     "require": {
         "neos/flow": "^5.0 || ^6.0 || @dev",
-        "sentry/sentry": "^2.2",
+        "sentry/sentry": "^3.0",
         "php-http/guzzle6-adapter": "^v2.0"
     },
     "autoload": {
