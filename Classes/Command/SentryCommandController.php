@@ -16,6 +16,7 @@ namespace Flownative\Sentry\Command;
 use Flownative\Sentry\SentryClient;
 use Neos\Flow\Annotations\Inject;
 use Neos\Flow\Cli\CommandController;
+use RuntimeException;
 use Sentry\Severity;
 
 final class SentryCommandController extends CommandController
@@ -45,7 +46,7 @@ final class SentryCommandController extends CommandController
             ['DSN', $options->getDsn()],
             ['Environment', $options->getEnvironment()],
             ['Release', $options->getRelease()],
-            ['Project Id', $options->getProjectId()],
+            ['Server Name', $options->getServerName()],
             ['Sample Rate', $options->getSampleRate()]
         ], [
             'Option',
@@ -60,6 +61,20 @@ final class SentryCommandController extends CommandController
             ]
         );
 
-        $this->output->outputLine('<success>A message was sent to Sentry</success> Event ID: #%s', [$eventId]);
+        $this->outputLine('<success>An informational message was sent to Sentry</success> Event ID: #%s', [$eventId]);
+        $this->outputLine();
+        $this->outputLine('This command will now throw an exception for testing purposes.');
+        $this->outputLine();
+
+        $this->throwException('Some argument');
+    }
+
+    /**
+     * @param string $someArgument
+     */
+    protected function throwException(string $someArgument): void
+    {
+        $previousException = new \InvalidArgumentException('Test "previous" exception thrown by the SentryCommandController', 1614759554);
+        throw new RuntimeException('Test exception in SentryCommandController', 1614759519, $previousException);
     }
 }

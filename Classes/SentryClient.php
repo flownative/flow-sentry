@@ -24,6 +24,7 @@ use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Utility\Environment;
 use Psr\Log\LogLevel;
+use Sentry\EventId;
 use Sentry\Options;
 use Sentry\SentrySdk;
 use Sentry\Severity;
@@ -128,7 +129,7 @@ class SentryClient
             $flowVersion = $flowPackage->getInstalledVersion();
         }
 
-        Hub::getCurrent()->configureScope(static function (Scope $scope) use ($flowVersion): void {
+        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion): void {
             $scope->setTag('flow_version', $flowVersion);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
             $scope->setTag('php_version', PHP_VERSION);
@@ -140,7 +141,7 @@ class SentryClient
      */
     public function getOptions(): Options
     {
-        if ($client = Hub::getCurrent()->getClient()) {
+        if ($client = SentrySdk::getCurrentHub()->getClient()) {
             return $client->getOptions();
         }
         return new Options();
@@ -207,9 +208,9 @@ class SentryClient
      * @param Severity $severity The severity
      * @param array $extraData Additional data passed to the Sentry event
      * @param array $tags
-     * @return string|null
+     * @return EventId|null
      */
-    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): ?string
+    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): ?EventId
     {
         if (empty($this->dsn)) {
             if ($this->logger) {
@@ -252,7 +253,7 @@ class SentryClient
             $userContext = new UserContext();
         }
 
-        Hub::getCurrent()->configureScope(static function (Scope $scope) use ($userContext, $extraData, $tags): void {
+        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($userContext, $extraData, $tags): void {
             foreach ($extraData as $extraDataKey => $extraDataValue) {
                 $scope->setExtra($extraDataKey, $extraDataValue);
             }
