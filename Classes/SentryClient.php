@@ -15,6 +15,8 @@ namespace Flownative\Sentry;
 
 use Flownative\Sentry\Context\UserContext;
 use Flownative\Sentry\Context\UserContextServiceInterface;
+use GuzzleHttp\Psr7\ServerRequest;
+use Jenssegers\Agent\Agent;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
@@ -133,6 +135,22 @@ class SentryClient
             $scope->setTag('flow_version', $flowVersion);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
             $scope->setTag('php_version', PHP_VERSION);
+
+            if (php_sapi_name() !== 'cli') {
+                $scope->setTag('url',
+                    (string)ServerRequest::fromGlobals()->getUri());
+
+                $agent = new Agent();
+                $scope->setContext('os', [
+                    'name' => $agent->platform(),
+                    'version' => $agent->version($agent->platform())
+                ]);
+
+                $scope->setContext('browser', [
+                    'name' => $agent->browser(),
+                    'version' => $agent->version($agent->browser())
+                ]);
+            }
         });
     }
 
