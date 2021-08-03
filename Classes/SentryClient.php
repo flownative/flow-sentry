@@ -23,6 +23,8 @@ use Neos\Flow\Error\WithReferenceCodeInterface;
 use Neos\Flow\Exception;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Security\Context as SecurityContext;
+use Neos\Flow\Session\Session;
+use Neos\Flow\Session\SessionManagerInterface;
 use Neos\Flow\Utility\Environment;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
@@ -30,7 +32,6 @@ use Sentry\EventId;
 use Sentry\Options;
 use Sentry\SentrySdk;
 use Sentry\Severity;
-use Sentry\State\Hub;
 use Sentry\State\Scope;
 use Throwable;
 
@@ -70,6 +71,12 @@ class SentryClient
      * @var LoggerInterface
      */
     protected $logger;
+
+    /**
+     * @Flow\Inject(lazy=false)
+     * @var SessionManagerInterface
+     */
+    protected $sessionManager;
 
     /**
      * @Flow\Inject
@@ -131,25 +138,34 @@ class SentryClient
             $flowVersion = $flowPackage->getInstalledVersion();
         }
 
-        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion): void {
+        $currentSession = null;
+        if ($this->sessionManager) {
+            $currentSession = $this->sessionManager->getCurrentSession();
+        }
+
+        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion, $currentSession): void {
             $scope->setTag('flow_version', $flowVersion);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
             $scope->setTag('php_version', PHP_VERSION);
 
             if (php_sapi_name() !== 'cli') {
-                $scope->setTag('url',
+                $scope->setTag('uri',
                     (string)ServerRequest::fromGlobals()->getUri());
 
                 $agent = new Agent();
-                $scope->setContext('os', [
+                $scope->setContext('client_os', [
                     'name' => $agent->platform(),
                     'version' => $agent->version($agent->platform())
                 ]);
 
-                $scope->setContext('browser', [
+                $scope->setContext('client_browser', [
                     'name' => $agent->browser(),
                     'version' => $agent->version($agent->browser())
                 ]);
+            }
+
+            if ($currentSession instanceof Session && $currentSession->isStarted()) {
+                $scope->setTag('flow_session_sha1', sha1($currentSession->getId()));
             }
         });
     }
@@ -194,13 +210,11 @@ class SentryClient
         if ($captureException) {
             $this->configureScope($extraData, $tags);
             if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
-                Hub::getCurrent()->configureScope(static function (Scope $scope): void {
+                SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope): void {
                     $scope->setLevel(Severity::warning());
                 });
-                $sentryEventId = \Sentry\captureException($throwable);
-            } else {
-                $sentryEventId = \Sentry\captureException($throwable);
             }
+            $sentryEventId = SentrySdk::getCurrentHub()->captureException($throwable);
         } else {
             $sentryEventId = 'ignored';
         }
