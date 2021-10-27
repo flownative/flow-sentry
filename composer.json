@@ -14,7 +14,7 @@
         "MIT"
     ],
     "require": {
-        "php": "^7.4",
+        "php": "7.4.* || 8.0.*",
         "neos/flow": "^5.0 || ^6.0 || @dev",
         "sentry/sdk": "^3.0",
         "jenssegers/agent": "^2.6"
