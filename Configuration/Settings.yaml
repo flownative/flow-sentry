@@ -11,9 +11,3 @@ Neos:
     log:
       systemLogger:
         backend: Flownative\Sentry\Log\SentryFileBackend
-
-    error:
-      exceptionHandler:
-        defaultRenderingOptions:
-          # Disable logging of exceptions, because they are already processed by Sentry
-          logException: false
