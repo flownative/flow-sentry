@@ -14,37 +14,46 @@ namespace Flownative\Sentry\Exception;
  */
 
 use Flownative\Sentry\SentryClientTrait;
-use Throwable;
+use Neos\Flow\Log\ThrowableStorageInterface;
 
-class DebugExceptionHandler extends \Neos\Flow\Error\DebugExceptionHandler
+final class DebugExceptionHandler extends \Neos\Flow\Error\DebugExceptionHandler
 {
     use SentryClientTrait;
 
     /**
-     * @param Throwable $exception
+     * Handles the given exception
+     *
+     * @param \Throwable $exception The exception object
+     * @return void
      */
-    public function echoExceptionWeb($exception): void
+    public function handleException($exception)
     {
-        try {
-            if ($sentryClient = self::getSentryClient()) {
-                $sentryClient->captureThrowable($exception);
-            }
-        } catch (\Throwable $e) {
+        // Ignore if the error is suppressed by using the shut-up operator @
+        if (error_reporting() === 0) {
+            return;
         }
-        parent::echoExceptionWeb($exception);
-    }
 
-    /**
-     * @param Throwable $exception
-     */
-    public function echoExceptionCli(Throwable $exception): void
-    {
+        $this->renderingOptions = $this->resolveCustomRenderingOptions($exception);
+
+        $exceptionWasLogged = false;
+        if ($this->throwableStorage instanceof ThrowableStorageInterface && isset($this->renderingOptions['logException']) && $this->renderingOptions['logException']) {
+            $message = $this->throwableStorage->logThrowable($exception);
+            $this->logger->critical($message);
+            $exceptionWasLogged = true;
+        }
+
         try {
             if ($sentryClient = self::getSentryClient()) {
                 $sentryClient->captureThrowable($exception);
             }
         } catch (\Throwable $e) {
         }
-        parent::echoExceptionCli($exception);
+
+        if (PHP_SAPI === 'cli') {
+            # Doesn't return:
+            $this->echoExceptionCli($exception, $exceptionWasLogged);
+        } else {
+            $this->echoExceptionWeb($exception);
+        }
     }
 }

@@ -27,15 +27,18 @@ class SentryFileBackend extends FileBackend
     private $capturingMessage = false;
 
     /**
-     * @param string $message
-     * @param int $severity
-     * @param null $additionalData
-     * @param null $packageKey
-     * @param null $className
-     * @param null $methodName
+     * Appends the given message along with the additional information into the log.
+     *
+     * @param string $message The message to log
+     * @param int $severity One of the LOG_* constants
+     * @param mixed $additionalData A variable containing more information about the event to be logged
+     * @param string|null $packageKey Key of the package triggering the log (determined automatically if not specified)
+     * @param string|null $className Name of the class triggering the log (determined automatically if not specified)
+     * @param string|null $methodName Name of the method triggering the log (determined automatically if not specified)
      * @return void
+     * @api
      */
-    public function append($message, $severity = LOG_INFO, $additionalData = null, $packageKey = null, $className = null, $methodName = null): void
+    public function append(string $message, int $severity = LOG_INFO, $additionalData = null, string $packageKey = null, string $className = null, string $methodName = null): void
     {
         if ($this->capturingMessage) {
             return;
