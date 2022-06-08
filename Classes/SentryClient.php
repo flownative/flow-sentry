@@ -223,7 +223,7 @@ class SentryClient
             $this->logger->log(
                 ($captureException ? LogLevel::CRITICAL : LogLevel::NOTICE),
                 sprintf(
-                    'Exception %s: %s (Ref: %s | Sentry: %s)',
+                    'Exception #%s: %s (Ref: %s | Sentry: %s)',
                     $throwable->getCode(),
                     $throwable->getMessage(),
                     ($throwable instanceof WithReferenceCodeInterface ? $throwable->getReferenceCode() : '-'),
