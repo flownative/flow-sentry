@@ -29,10 +29,18 @@ use Neos\Flow\Session\SessionManagerInterface;
 use Neos\Flow\Utility\Environment;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
+use Sentry\Event;
+use Sentry\EventHint;
 use Sentry\EventId;
+use Sentry\ExceptionDataBag;
+use Sentry\ExceptionMechanism;
+use Sentry\Frame;
 use Sentry\Options;
 use Sentry\SentrySdk;
+use Sentry\Serializer\RepresentationSerializer;
 use Sentry\Severity;
+use Sentry\Stacktrace;
+use Sentry\StacktraceBuilder;
 use Sentry\State\Scope;
 use Throwable;
 
@@ -86,8 +94,10 @@ class SentryClient
     protected $packageManager;
 
     /**
-     * @param array $settings
+     * @var StacktraceBuilder
      */
+    protected $stacktraceBuilder;
+
     public function injectSettings(array $settings): void
     {
         $this->dsn = $settings['dsn'] ?? '';
@@ -96,11 +106,15 @@ class SentryClient
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
     }
 
-    /**
-     * Initialize the Sentry client and fatal error handler (shutdown function)
-     */
     public function initializeObject(): void
     {
+        $this->stacktraceBuilder = new StacktraceBuilder(
+            new Options([]),
+            new RepresentationSerializer(
+                new Options([])
+            )
+        );
+
         if (empty($this->dsn)) {
             return;
         }
@@ -128,9 +142,6 @@ class SentryClient
         $this->setTags();
     }
 
-    /**
-     * @return void
-     */
     private function setTags(): void
     {
         $flowVersion = '';
@@ -177,9 +188,6 @@ class SentryClient
         });
     }
 
-    /**
-     * @return Options
-     */
     public function getOptions(): Options
     {
         if ($client = SentrySdk::getCurrentHub()->getClient()) {
@@ -188,13 +196,6 @@ class SentryClient
         return new Options();
     }
 
-    /**
-     * Capture an exception or error
-     *
-     * @param Throwable $throwable The exception or error to capture
-     * @param array $extraData Additional data passed to the Sentry event
-     * @param array $tags
-     */
     public function captureThrowable(Throwable $throwable, array $extraData = [], array $tags = []): void
     {
         if (empty($this->dsn)) {
@@ -213,7 +214,6 @@ class SentryClient
         $tags['exception_code'] = (string)$throwable->getCode();
 
         $captureException = (!in_array(get_class($throwable), $this->excludeExceptionTypes, true));
-
         if ($captureException) {
             $this->configureScope($extraData, $tags);
             if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
@@ -221,11 +221,12 @@ class SentryClient
                     $scope->setLevel(Severity::warning());
                 });
             }
-            $sentryEventId = SentrySdk::getCurrentHub()->captureException($throwable);
+            $event = Event::createEvent();
+            $this->addThrowableToEvent($throwable, $event);
+            $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
         } else {
             $sentryEventId = 'ignored';
         }
-
         if ($this->logger) {
             $this->logger->log(
                 ($captureException ? LogLevel::CRITICAL : LogLevel::NOTICE),
@@ -240,20 +241,11 @@ class SentryClient
         }
     }
 
-    /**
-     * Capture a message
-     *
-     * @param string $message The message to capture, for example a log message
-     * @param Severity $severity The severity
-     * @param array $extraData Additional data passed to the Sentry event
-     * @param array $tags
-     * @return EventId|null
-     */
     public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): ?EventId
     {
         if (empty($this->dsn)) {
             if ($this->logger) {
-                $this->logger->warning(sprintf('Sentry: Failed capturing message, because no Sentry DSN was set. Please check your settings.'));
+                $this->logger->warning('Sentry: Failed capturing message, because no Sentry DSN was set. Please check your settings.');
             }
             return null;
         }
@@ -263,7 +255,11 @@ class SentryClient
         }
 
         $this->configureScope($extraData, $tags);
-        $sentryEventId = \Sentry\captureMessage($message, $severity);
+        $eventHint = EventHint::fromArray([
+            'stacktrace' => $this->prepareStacktrace()
+        ]);
+        $sentryEventId = \Sentry\captureMessage($message, $severity, $eventHint);
+
         if ($this->logger) {
             $this->logger->log(
                 (string)$severity,
@@ -278,11 +274,6 @@ class SentryClient
         return $sentryEventId;
     }
 
-    /**
-     * @param array $extraData
-     * @param array $tags
-     * @return void
-     */
     private function configureScope(array $extraData, array $tags): void
     {
         $securityContext = Bootstrap::$staticObjectManager->get(SecurityContext::class);
@@ -302,5 +293,71 @@ class SentryClient
             $scope->setUser($userContext->toArray());
             $scope->setLevel(null);
         });
+    }
+
+    private function renderCleanPathAndFilename(string $rawPathAndFilename): string
+    {
+        if (preg_match('#Flow_Object_Classes/[A-Za-z0-9_]+.php$#', $rawPathAndFilename) !== 1) {
+            return $rawPathAndFilename;
+        }
+        $absolutePathAndFilename = FLOW_PATH_ROOT . trim($rawPathAndFilename, '/');
+        if (!file_exists($absolutePathAndFilename)) {
+            return $rawPathAndFilename;
+        }
+        $classProxyFile = file_get_contents($absolutePathAndFilename);
+        if ($classProxyFile === false) {
+            return $rawPathAndFilename;
+        }
+        if (preg_match('@# PathAndFilename: ([/A-Za-z0-9_.]+\.php)@', $classProxyFile, $matches) !== 1) {
+            return $rawPathAndFilename;
+        }
+        return str_replace(FLOW_PATH_ROOT, '/', str_replace('_', '/', $matches[1]));
+    }
+
+    private function prepareStacktrace(mixed $throwable = null): Stacktrace
+    {
+        if ($throwable) {
+            $stacktrace = $this->stacktraceBuilder->buildFromException($throwable);
+        } else {
+            $stacktrace = $this->stacktraceBuilder->buildFromBacktrace(
+                debug_backtrace(0),
+                __FILE__,
+                __LINE__ - 3
+            );
+        }
+
+        $frames = [];
+        foreach ($stacktrace->getFrames() as $frame) {
+            $classPathAndFilename = $this->renderCleanPathAndFilename($frame->getFile());
+            $frames [] = new Frame(
+                $frame->getFunctionName(),
+                $classPathAndFilename,
+                $frame->getLine(),
+                $frame->getRawFunctionName(),
+                $frame->getAbsoluteFilePath(),
+                $frame->getVars(),
+                strpos($classPathAndFilename, 'Packages/Framework/') === false
+            );
+        }
+        return new Stacktrace($frames);
+    }
+
+    private function addThrowableToEvent(Throwable $throwable, Event $event): void
+    {
+        if ($throwable instanceof \ErrorException && null === $event->getLevel()) {
+            $event->setLevel(Severity::fromError($throwable->getSeverity()));
+        }
+
+        $exceptions = [];
+        do {
+            $exceptions[] = new ExceptionDataBag(
+                $throwable,
+                $this->prepareStacktrace($throwable),
+                new ExceptionMechanism(ExceptionMechanism::TYPE_GENERIC, true)
+            );
+        } while ($throwable = $throwable->getPrevious());
+
+        $event->setExceptions($exceptions);
+
     }
 }
