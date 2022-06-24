@@ -330,7 +330,7 @@ class SentryClient
         foreach ($stacktrace->getFrames() as $frame) {
             $classPathAndFilename = $this->renderCleanPathAndFilename($frame->getFile());
             $frames [] = new Frame(
-                $frame->getFunctionName(),
+                str_replace('_Original::', '::', (string)$frame->getFunctionName()),
                 $classPathAndFilename,
                 $frame->getLine(),
                 $frame->getRawFunctionName(),
