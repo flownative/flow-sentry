@@ -2,7 +2,7 @@
 [![Packagist](https://img.shields.io/packagist/v/flownative/sentry.svg)](https://packagist.org/packages/flownative/sentry)
 [![Maintenance level: Love](https://img.shields.io/badge/maintenance-%E2%99%A1%E2%99%A1%E2%99%A1-ff69b4.svg)](https://www.flownative.com/en/products/open-source.html)
 
-# Sentry integration for Flow 6.x and Flow 7.x
+# Sentry integration for Flow 6.x, 7.x and Flow 8.x
 
 This [Flow](https://flow.neos.io) package allows you to automate
 reporting of errors to [Sentry](https://www.sentry.io)
