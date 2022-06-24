@@ -9,6 +9,10 @@ reporting of errors to [Sentry](https://www.sentry.io)
 
 ## Key Features
 
+This package makes sure that exceptions and errors logged by the Flow 
+framework also end up in Sentry. This client takes some extra care to
+clean up paths and filenames of stacktraces so you get good overview
+while looking at an issue in the Sentry UI.
 
 ## Installation
 
