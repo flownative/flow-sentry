@@ -21,6 +21,7 @@ use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
 use Neos\Flow\Exception;
+use Neos\Flow\Package\Exception\UnknownPackageException;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Session\Session;
@@ -132,10 +133,16 @@ class SentryClient
      */
     private function setTags(): void
     {
-        $flowVersion = FLOW_VERSION_BRANCH;
+        $flowVersion = '';
         if ($this->packageManager) {
-            $flowPackage = $this->packageManager->getPackage('Neos.Flow');
-            $flowVersion = $flowPackage->getInstalledVersion();
+            try {
+                $flowPackage = $this->packageManager->getPackage('Neos.Flow');
+                $flowVersion = $flowPackage->getInstalledVersion();
+            } catch (UnknownPackageException $e) {
+            }
+        }
+        if (empty($flowVersion)) {
+            $flowVersion = FLOW_VERSION_BRANCH;
         }
 
         $currentSession = null;
