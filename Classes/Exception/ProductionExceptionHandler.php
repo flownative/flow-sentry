@@ -35,28 +35,26 @@ class ProductionExceptionHandler extends \Neos\Flow\Error\ProductionExceptionHan
 
         $this->renderingOptions = $this->resolveCustomRenderingOptions($exception);
 
+        $exceptionWasLogged = false;
         if ($this->throwableStorage instanceof ThrowableStorageInterface && isset($this->renderingOptions['logException']) && $this->renderingOptions['logException']) {
             $message = $this->throwableStorage->logThrowable($exception);
             $this->logger->critical($message);
+            $exceptionWasLogged = true;
+        }
+
+        try {
+            if ($sentryClient = self::getSentryClient()) {
+                $sentryClient->captureThrowable($exception);
+            }
+        } catch (\Throwable $e) {
         }
 
         switch (PHP_SAPI) {
             case 'cli':
-                try {
-                    if ($sentryClient = self::getSentryClient()) {
-                        $sentryClient->captureThrowable($exception);
-                    }
-                } catch (\Throwable $e) {
-                }
-                echo $this->buildView($exception, $this->renderingOptions)->render();
+                # Doesn't return:
+                $this->echoExceptionCli($exception, $exceptionWasLogged);
             break;
             default:
-                try {
-                    if ($sentryClient = self::getSentryClient()) {
-                        $sentryClient->captureThrowable($exception);
-                    }
-                } catch (\Throwable $e) {
-                }
                 $this->echoExceptionWeb($exception);
         }
     }
