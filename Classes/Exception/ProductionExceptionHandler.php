@@ -49,13 +49,11 @@ class ProductionExceptionHandler extends \Neos\Flow\Error\ProductionExceptionHan
         } catch (\Throwable $e) {
         }
 
-        switch (PHP_SAPI) {
-            case 'cli':
-                # Doesn't return:
-                $this->echoExceptionCli($exception, $exceptionWasLogged);
-            break;
-            default:
-                $this->echoExceptionWeb($exception);
+        if (PHP_SAPI === 'cli') {
+            # Doesn't return:
+            $this->echoExceptionCli($exception, $exceptionWasLogged);
+        } else {
+            $this->echoExceptionWeb($exception);
         }
     }
 }

@@ -14,8 +14,8 @@
         "MIT"
     ],
     "require": {
-        "php": "7.4.* || 8.0.* || 8.1.*",
-        "neos/flow": "^5.0 || ^6.0 || ^7.0 || @dev",
+        "php": "^7.4 || ^8.0",
+        "neos/flow": "^6.3 || ^7.0 || ^8.0 || @dev",
         "sentry/sdk": "^3.0",
         "jenssegers/agent": "^2.6"
     },
@@ -23,6 +23,5 @@
         "psr-4": {
             "Flownative\\Sentry\\": "Classes"
         }
-    },
-    "extra": {}
+    }
 }

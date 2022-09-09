@@ -49,25 +49,11 @@ use Throwable;
  */
 class SentryClient
 {
-    /**
-     * @var string
-     */
-    protected $dsn;
-
-    /**
-     * @var string
-     */
-    protected $environment;
-
-    /**
-     * @var string
-     */
-    protected $release;
-
-    /**
-     * @var array
-     */
-    protected $excludeExceptionTypes = [];
+    protected string $dsn;
+    protected string $environment;
+    protected string $release;
+    protected array $excludeExceptionTypes = [];
+    protected StacktraceBuilder $stacktraceBuilder;
 
     /**
      * @Flow\Inject
@@ -92,11 +78,6 @@ class SentryClient
      * @var PackageManager
      */
     protected $packageManager;
-
-    /**
-     * @var StacktraceBuilder
-     */
-    protected $stacktraceBuilder;
 
     public function injectSettings(array $settings): void
     {
@@ -166,7 +147,7 @@ class SentryClient
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
             $scope->setTag('php_version', PHP_VERSION);
 
-            if (php_sapi_name() !== 'cli') {
+            if (PHP_SAPI !== 'cli') {
                 $scope->setTag('uri',
                     (string)ServerRequest::fromGlobals()->getUri());
 
@@ -297,7 +278,7 @@ class SentryClient
 
     private function renderCleanPathAndFilename(string $rawPathAndFilename): string
     {
-        if (preg_match('#Flow_Object_Classes/[A-Za-z0-9_]+.php$#', $rawPathAndFilename) !== 1) {
+        if (preg_match('#Flow_Object_Classes/\w+.php$#', $rawPathAndFilename) !== 1) {
             return $rawPathAndFilename;
         }
         $absolutePathAndFilename = FLOW_PATH_ROOT . trim($rawPathAndFilename, '/');
@@ -308,13 +289,13 @@ class SentryClient
         if ($classProxyFile === false) {
             return $rawPathAndFilename;
         }
-        if (preg_match('@# PathAndFilename: ([/A-Za-z0-9_.]+\.php)@', $classProxyFile, $matches) !== 1) {
+        if (preg_match('@# PathAndFilename: ([/\w.]+\.php)@', $classProxyFile, $matches) !== 1) {
             return $rawPathAndFilename;
         }
-        return str_replace(FLOW_PATH_ROOT, '/', str_replace('_', '/', $matches[1]));
+        return str_replace(['_', FLOW_PATH_ROOT], '/', $matches[1]);
     }
 
-    private function prepareStacktrace(mixed $throwable = null): Stacktrace
+    private function prepareStacktrace(\Throwable $throwable = null): Stacktrace
     {
         if ($throwable) {
             $stacktrace = $this->stacktraceBuilder->buildFromException($throwable);
