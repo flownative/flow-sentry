@@ -13,8 +13,11 @@ namespace Flownative\Sentry\Command;
  * source code.
  */
 
-use Flownative\Sentry\Exception\SentryClientTestException;
 use Flownative\Sentry\SentryClient;
+use Flownative\Sentry\Test\JsonSerializableTestArgument;
+use Flownative\Sentry\Test\SentryClientTestException;
+use Flownative\Sentry\Test\StringableTestArgument;
+use Flownative\Sentry\Test\ThrowingClass;
 use Neos\Flow\Annotations\Inject;
 use Neos\Flow\Cli\CommandController;
 use Sentry\Severity;
@@ -34,6 +37,8 @@ final class SentryCommandController extends CommandController
      * configuration, credentials and connection to the Sentry server work fine.
      *
      * For testing purposes, an event will be sent to Sentry.
+     *
+     * @throws SentryClientTestException
      */
     public function testCommand(): void
     {
@@ -66,16 +71,6 @@ final class SentryCommandController extends CommandController
         $this->outputLine('This command will now throw an exception for testing purposes.');
         $this->outputLine();
 
-        $this->throwException('Some argument');
-    }
-
-    /**
-     * @param string $someArgument
-     * @throws SentryClientTestException
-     */
-    protected function throwException(string $someArgument): void
-    {
-        $previousException = new \RuntimeException('Test "previous" exception thrown by the SentryCommandController', 1614759554);
-        throw new SentryClientTestException('Test exception in SentryCommandController', 1614759519, $previousException);
+        (new ThrowingClass())->throwException(new StringableTestArgument((string)M_PI));
     }
 }
