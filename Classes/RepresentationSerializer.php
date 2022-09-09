@@ -32,14 +32,14 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
         if ($serializedObject === []) {
             if ($object instanceof \Stringable || is_callable([$object, '__toString'])) {
                 $serializedObject = [
-                    'type' => get_class($object),
-                    'value (as string)' => (string)$object
+                    'Object' => get_class($object),
+                    '(as string)' => (string)$object
                 ];
             } elseif ($object instanceof \JsonSerializable) {
                 try {
                     $serializedObject = [
-                        'type' => get_class($object),
-                        'value (as JSON)' => json_encode($object, JSON_THROW_ON_ERROR)
+                        'Object' => get_class($object),
+                        '(as JSON)' => json_encode($object, JSON_THROW_ON_ERROR)
                     ];
                 } catch (\JsonException $e) {
                     $serializedObject = 'Object ' . get_class($object);
