@@ -13,6 +13,8 @@ namespace Flownative\Sentry;
  * source code.
  */
 
+use Sentry\Options;
+
 /**
  * Serializes a value into a representation that should reasonably suggest
  * both the type and value, and be serializable into JSON.
@@ -26,27 +28,55 @@ namespace Flownative\Sentry;
  */
 class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializer
 {
-    protected function serializeObject($object, int $_depth = 0, array $hashes = [])
+    private int $maxDepth;
+
+    public function __construct(Options $options, int $maxDepth = 3, ?string $mbDetectOrder = null)
     {
-        $serializedObject = parent::serializeObject($object, $_depth, $hashes);
-        if ($serializedObject === []) {
-            if ($object instanceof \Stringable || is_callable([$object, '__toString'])) {
+        parent::__construct($options, $maxDepth, $mbDetectOrder);
+        $this->maxDepth = $maxDepth;
+    }
+
+    protected function serializeObject($object, int $_depth = 0, array $hashes = []): array|float|bool|int|string|null
+    {
+        if ($_depth >= $this->maxDepth || \in_array(spl_object_hash($object), $hashes, true)) {
+            return $this->serializeValue($object);
+        }
+
+        if ($object instanceof \Stringable || is_callable([$object, '__toString'])) {
+            $serializedObject = [
+                'class' => get_class($object),
+                'data' => (string)$object
+            ];
+        } elseif ($object instanceof \JsonSerializable) {
+            try {
                 $serializedObject = [
-                    'Object' => get_class($object),
-                    '(as string)' => (string)$object
+                    'class' => get_class($object),
+                    'data' => json_encode($object, JSON_THROW_ON_ERROR)
                 ];
-            } elseif ($object instanceof \JsonSerializable) {
-                try {
-                    $serializedObject = [
-                        'Object' => get_class($object),
-                        '(as JSON)' => json_encode($object, JSON_THROW_ON_ERROR)
-                    ];
-                } catch (\JsonException $e) {
-                    $serializedObject = 'Object ' . get_class($object);
+            } catch (\JsonException $e) {
+                $serializedObject = [
+                    'class' => get_class($object),
+                    'serialization error' => $e->getMessage()
+                ];
+            }
+        } else {
+            $data = [];
+            $hashes[] = spl_object_hash($object);
+
+            foreach ($object as $key => $value) {
+                if (is_object($value)) {
+                    $data[$key] = $this->serializeObject($value, $_depth + 1, $hashes);
+                } else {
+                    $data[$key] = $this->serializeRecursively($value, $_depth + 1);
                 }
             }
 
-            return $serializedObject;
+            $serializedObject = [
+                'class ' => get_class($object),
+                'data' => $data
+            ];
         }
+
+        return $serializedObject;
     }
 }
