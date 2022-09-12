@@ -13,18 +13,19 @@ namespace Flownative\Sentry;
  * source code.
  */
 
+use GuzzleHttp\Psr7\Response;
+use Neos\Flow\Cli\Request as CliRequest;
+use Neos\Flow\Mvc\ActionRequest;
+use Psr\Http\Message\RequestInterface;
 use Sentry\Options;
 
 /**
  * Serializes a value into a representation that should reasonably suggest
  * both the type and value, and be serializable into JSON.
  *
- * It kicks in if the parent's serializeObject() return an empty array, i.e.
- * no useful information could be extracted from simply iterating over the
- * object's properties…
- *
- * First is tries to use __toString(), then json_serialize(), if those are
- * supported.
+ * First is tries to use specialized serializers (see getClassSerializers),
+ * then __toString(), then json_serialize(), if those are supported. As a
+ * last resort foreach is used to iterate over object properties.
  */
 class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializer
 {
@@ -40,6 +41,17 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
     {
         if ($_depth >= $this->maxDepth || \in_array(spl_object_hash($object), $hashes, true)) {
             return $this->serializeValue($object);
+        }
+
+        // Try each serializer until there is none left or the serializer returned data
+        $classSerializers = $this->getClassSerializers();
+        foreach ($classSerializers as $targetType => $classSerializer) {
+            if ($object instanceof $targetType) {
+                return [
+                    'class' => get_class($object),
+                    'data' => $this->serializeRecursively($classSerializer($object), $_depth + 1),
+                ];
+            }
         }
 
         if ($object instanceof \Stringable || is_callable([$object, '__toString'])) {
@@ -79,4 +91,37 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
 
         return $serializedObject;
     }
+
+    private function getClassSerializers(): array
+    {
+        return [
+            RequestInterface::class => function (RequestInterface $request): array {
+                return [
+                    'method' => $request->getMethod(),
+                    'uri' => (string)$request->getUri()
+                ];
+            },
+            Response::class => function (Response $response): array {
+                return [
+                    'Status code' => $response->getStatusCode(),
+                    'Headers' => $response->getHeaders()
+                ];
+            },
+            ActionRequest::class => function (ActionRequest $request): array {
+                return [
+                    'Package' => $request->getControllerPackageKey(),
+                    'Subpackage' => $request->getControllerSubpackageKey(),
+                    'Controller' => $request->getControllerName(),
+                    'Action' => $request->getControllerActionName(),
+                ];
+            },
+            CliRequest::class => function (CliRequest $request): array {
+                return [
+                    'Controller' => $request->getControllerObjectName(),
+                    'Command' => $request->getControllerCommandName()
+                ];
+            }
+        ];
+    }
+
 }
