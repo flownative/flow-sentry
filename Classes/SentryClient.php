@@ -281,11 +281,10 @@ class SentryClient
         if (preg_match('#Flow_Object_Classes/\w+.php$#', $rawPathAndFilename) !== 1) {
             return $rawPathAndFilename;
         }
-        $absolutePathAndFilename = FLOW_PATH_ROOT . trim($rawPathAndFilename, '/');
-        if (!file_exists($absolutePathAndFilename)) {
+        if (!file_exists($rawPathAndFilename)) {
             return $rawPathAndFilename;
         }
-        $classProxyFile = file_get_contents($absolutePathAndFilename);
+        $classProxyFile = file_get_contents($rawPathAndFilename);
         if ($classProxyFile === false) {
             return $rawPathAndFilename;
         }
