@@ -15,6 +15,7 @@ namespace Flownative\Sentry;
 
 use Flownative\Sentry\Context\UserContext;
 use Flownative\Sentry\Context\UserContextServiceInterface;
+use Flownative\Sentry\Context\WithExtraDataInterface;
 use GuzzleHttp\Psr7\ServerRequest;
 use Jenssegers\Agent\Agent;
 use Neos\Flow\Annotations as Flow;
@@ -27,6 +28,7 @@ use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Flow\Session\Session;
 use Neos\Flow\Session\SessionManagerInterface;
 use Neos\Flow\Utility\Environment;
+use Neos\Utility\Arrays;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 use Sentry\Event;
@@ -187,6 +189,10 @@ class SentryClient
         if ($throwable instanceof WithReferenceCodeInterface) {
             $extraData['Reference Code'] = $throwable->getReferenceCode();
         }
+        if ($throwable instanceof WithExtraDataInterface) {
+            $extraData = Arrays::arrayMergeRecursiveOverrule($extraData, $throwable->getExtraData());
+        }
+
         $extraData['PHP Process Inode'] = getmyinode();
         $extraData['PHP Process PID'] = getmypid();
         $extraData['PHP Process UID'] = getmyuid();
