@@ -47,28 +47,27 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
         $classSerializers = $this->getClassSerializers();
         foreach ($classSerializers as $targetType => $classSerializer) {
             if ($object instanceof $targetType) {
-                return [
-                    'class' => get_class($object),
-                    'data' => $this->serializeRecursively($classSerializer($object), $_depth + 1),
-                ];
+                $serializedObject = $this->serializeRecursively($classSerializer($object), $_depth + 1);
+                $serializedObject['__class'] = get_class($object);
+                return $serializedObject;
             }
         }
 
         if ($object instanceof \Stringable || is_callable([$object, '__toString'])) {
             $serializedObject = [
-                'class' => get_class($object),
-                'data' => (string)$object
+                '__class' => get_class($object),
+                '__string' => (string)$object
             ];
         } elseif ($object instanceof \JsonSerializable) {
             try {
                 $serializedObject = [
-                    'class' => get_class($object),
-                    'data' => json_encode($object, JSON_THROW_ON_ERROR)
+                    '__class' => get_class($object),
+                    '__json' => json_encode($object, JSON_THROW_ON_ERROR)
                 ];
             } catch (\JsonException $e) {
                 $serializedObject = [
-                    'class' => get_class($object),
-                    'serialization error' => $e->getMessage()
+                    '__class' => get_class($object),
+                    '__serialization_error' => $e->getMessage()
                 ];
             }
         } else {
@@ -83,10 +82,8 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
                 }
             }
 
-            $serializedObject = [
-                'class ' => get_class($object),
-                'data' => $data
-            ];
+            $serializedObject = $data;
+            $serializedObject['__class '] = get_class($object);
         }
 
         return $serializedObject;
