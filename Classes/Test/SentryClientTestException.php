@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Flownative\Sentry\Exception;
+namespace Flownative\Sentry\Test;
 
 /*
  * This file is part of the Flownative.Sentry package.

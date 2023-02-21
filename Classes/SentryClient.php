@@ -37,7 +37,6 @@ use Sentry\ExceptionMechanism;
 use Sentry\Frame;
 use Sentry\Options;
 use Sentry\SentrySdk;
-use Sentry\Serializer\RepresentationSerializer;
 use Sentry\Severity;
 use Sentry\Stacktrace;
 use Sentry\StacktraceBuilder;
@@ -89,11 +88,13 @@ class SentryClient
 
     public function initializeObject(): void
     {
+        $representationSerializer = new RepresentationSerializer(
+            new Options([])
+        );
+        $representationSerializer->setSerializeAllObjects(true);
         $this->stacktraceBuilder = new StacktraceBuilder(
             new Options([]),
-            new RepresentationSerializer(
-                new Options([])
-            )
+            $representationSerializer
         );
 
         if (empty($this->dsn)) {
@@ -338,6 +339,5 @@ class SentryClient
         } while ($throwable = $throwable->getPrevious());
 
         $event->setExceptions($exceptions);
-
     }
 }
