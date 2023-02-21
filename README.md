@@ -59,6 +59,16 @@ similar to the following message:
 … NOTICE Exception 12345: The exception message (Ref: 202004161706040c28ae | Sentry: ignored)
 ```
 
+## Additional Data
+
+Exceptions declared in an application can optionally implement 
+`WithAdditionalDataInterface` provided by this package. If they do, the 
+array returned by `getAdditionalData()` will be visible in the "additional 
+data" section in Sentry.
+
+Note that the array must only contain values of simple types, such as 
+strings, booleans or integers.
+
 ## Testing the Client
 
 This package provides a command controller which allows you to log a
