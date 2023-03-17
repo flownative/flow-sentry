@@ -37,7 +37,10 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
         $this->maxDepth = $maxDepth;
     }
 
-    protected function serializeObject($object, int $_depth = 0, array $hashes = []): array|float|bool|int|string|null
+    /**
+     * @return array|float|bool|int|string|null
+     */
+    protected function serializeObject($object, int $_depth = 0, array $hashes = [])
     {
         if ($_depth >= $this->maxDepth || \in_array(spl_object_hash($object), $hashes, true)) {
             return $this->serializeValue($object);
