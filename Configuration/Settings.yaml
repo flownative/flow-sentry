@@ -3,6 +3,7 @@ Flownative:
     dsn: "%env:SENTRY_DSN%"
     environment: "%env:SENTRY_ENVIRONMENT%"
     release: "%env:SENTRY_RELEASE%"
+    sampleRate: "%env:SENTRY_SAMPLE_RATE%"
     capture:
       excludeExceptionTypes: []
 
