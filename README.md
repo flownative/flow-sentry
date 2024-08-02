@@ -27,7 +27,7 @@ $ composer require flownative/sentry
 ## Configuration
 
 You need to at least specify a DSN to be used as a logging target. Apart
-from that, you can configure the Sentry environment and release. All
+from that, you can configure the Sentry environment and release. These
 options can either be set in the Flow settings or, more conveniently, by
 setting the respective environment variables.
 
@@ -38,6 +38,16 @@ Flownative:
     environment: "%env:SENTRY_ENVIRONMENT%"
     release: "%env:SENTRY_RELEASE%"
 ```
+
+The error sample rate of Sentry can be set using
+
+```yaml
+Flownative:
+  Sentry:
+    sampleRate: 1
+```
+
+The default is 1 – 100% percent of all errors are sampled.
 
 Throwables (that includes exceptions and runtime errors) are logged as
 Sentry events. You may specify a list of exceptions which should not be
