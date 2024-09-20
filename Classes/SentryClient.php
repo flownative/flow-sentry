@@ -53,7 +53,7 @@ class SentryClient
     protected string $dsn;
     protected string $environment;
     protected string $release;
-    protected string $sampleRate;
+    protected float $sampleRate;
     protected array $excludeExceptionTypes = [];
     protected StacktraceBuilder $stacktraceBuilder;
 
@@ -86,7 +86,7 @@ class SentryClient
         $this->dsn = $settings['dsn'] ?? '';
         $this->environment = $settings['environment'] ?? '';
         $this->release = $settings['release'] ?? '';
-        $this->sampleRate = $settings['sampleRate'] ?? 1;
+        $this->sampleRate = (float)($settings['sampleRate'] ?? 1);
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
     }
 
@@ -109,7 +109,7 @@ class SentryClient
             'dsn' => $this->dsn,
             'environment' => $this->environment,
             'release' => $this->release,
-            'sample_rate' => (float)$this->sampleRate,
+            'sample_rate' => $this->sampleRate,
             'in_app_exclude' => [
                 FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
                 FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
