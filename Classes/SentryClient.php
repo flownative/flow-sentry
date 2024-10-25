@@ -83,9 +83,9 @@ class SentryClient
 
     public function injectSettings(array $settings): void
     {
-        $this->dsn = $settings['dsn'] ?? '';
-        $this->environment = $settings['environment'] ?? '';
-        $this->release = $settings['release'] ?? '';
+        $this->dsn = $settings['dsn'] ?: '';
+        $this->environment = $settings['environment'] ?: '';
+        $this->release = $settings['release'] ?: '';
         $this->sampleRate = (float)($settings['sampleRate'] ?? 1);
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
     }
