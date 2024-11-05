@@ -16,7 +16,7 @@ namespace Flownative\Sentry\Exception;
 use Flownative\Sentry\SentryClientTrait;
 use Neos\Flow\Log\ThrowableStorageInterface;
 
-final class DebugExceptionHandler extends \Neos\Flow\Error\DebugExceptionHandler
+class DebugExceptionHandler extends \Neos\Flow\Error\DebugExceptionHandler
 {
     use SentryClientTrait;
 
