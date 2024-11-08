@@ -14,18 +14,17 @@ namespace Flownative\Sentry\Command;
  */
 
 use Flownative\Sentry\SentryClient;
-use Flownative\Sentry\Test\JsonSerializableTestArgument;
 use Flownative\Sentry\Test\SentryClientTestException;
 use Flownative\Sentry\Test\StringableTestArgument;
 use Flownative\Sentry\Test\ThrowingClass;
-use Neos\Flow\Annotations\Inject;
+use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Cli\CommandController;
 use Sentry\Severity;
 
 final class SentryCommandController extends CommandController
 {
     /**
-     * @Inject
+     * @Flow\Inject
      * @var SentryClient
      */
     protected $sentryClient;

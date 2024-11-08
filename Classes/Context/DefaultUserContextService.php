@@ -18,10 +18,6 @@ use Neos\Flow\Security\Context;
 
 class DefaultUserContextService implements UserContextServiceInterface
 {
-    /**
-     * @param Context $securityContext
-     * @return UserContextInterface
-     */
     public function getUserContext(Context $securityContext): UserContextInterface
     {
         $userContext = new UserContext();

@@ -19,9 +19,6 @@ use Neos\Flow\ObjectManagement\ObjectManagerInterface;
 
 trait SentryClientTrait
 {
-    /**
-     * @return SentryClient|null
-     */
     protected static function getSentryClient(): ?SentryClient
     {
         if (!Bootstrap::$staticObjectManager instanceof ObjectManagerInterface || Bootstrap::$staticObjectManager instanceof CompileTimeObjectManager) {
