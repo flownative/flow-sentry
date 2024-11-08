@@ -52,14 +52,17 @@ class SentryFileBackend extends FileBackend
                     default => Severity::info(),
                 };
 
+                $captureResult = $sentryClient->captureMessage($message, $sentrySeverity, ['Additional Data' => $additionalData]);
+                if ($captureResult) {
+                    $message .= ' (Sentry: #' . $captureResult->eventId . ')';
+                } else {
+                    $message .= ' (Sentry: ' . $captureResult->message . ')';
                 }
-
-                $sentryClient->captureMessage($message, $sentrySeverity, ['Additional Data' => $additionalData]);
             }
-            parent::append($message, $severity, $additionalData, $packageKey, $className, $methodName);
         } catch (\Throwable $throwable) {
-            echo sprintf('SentryFileBackend: %s (%s)', $throwable->getMessage(), $throwable->getCode());
+            parent::append(sprintf('%s (%s)', $throwable->getMessage(), $throwable->getCode()), LOG_ERR, 'Flownative.Sentry', __CLASS__, __METHOD__);
         } finally {
+            parent::append($message, $severity, $additionalData, $packageKey, $className, $methodName);
             $this->capturingMessage = false;
         }
     }

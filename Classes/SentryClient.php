@@ -232,17 +232,14 @@ class SentryClient
         );
     }
 
-    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): ?EventId
+    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): CaptureResult
     {
         if (empty($this->dsn)) {
-            if ($this->logger) {
-                $this->logger->warning('Sentry: Failed capturing message, because no Sentry DSN was set. Please check your settings.');
-            }
-            return null;
-        }
-
-        if (preg_match('/Sentry: [0-9a-f]{32}/', $message) === 1) {
-            return null;
+            return new CaptureResult(
+                false,
+                'Failed capturing message, because no Sentry DSN was set. Please check your settings.',
+                ''
+            );
         }
 
         $this->configureScope($extraData, $tags);
@@ -251,18 +248,11 @@ class SentryClient
         ]);
         $sentryEventId = \Sentry\captureMessage($message, $severity, $eventHint);
 
-        if ($this->logger) {
-            $this->logger->log(
-                (string)$severity,
-                sprintf(
-                    '%s (Sentry: %s)',
-                    $message,
-                    $sentryEventId
-                )
-            );
-        }
-
-        return $sentryEventId;
+        return new CaptureResult(
+            true,
+            '',
+            (string)$sentryEventId
+        );
     }
 
     private function configureScope(array $extraData, array $tags): void
