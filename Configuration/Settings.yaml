@@ -12,3 +12,7 @@ Neos:
     log:
       systemLogger:
         backend: Flownative\Sentry\Log\SentryFileBackend
+      throwables:
+        storageClass: 'Flownative\Sentry\Log\SentryStorage'
+        optionsByImplementation:
+          'Flownative\Sentry\Log\SentryStorage': []
