@@ -21,10 +21,7 @@ class SentryFileBackend extends FileBackend
 {
     use SentryClientTrait;
 
-    /**
-     * @var bool
-     */
-    private $capturingMessage = false;
+    private bool $capturingMessage = false;
 
     /**
      * Appends the given message along with the additional information into the log.
@@ -32,13 +29,12 @@ class SentryFileBackend extends FileBackend
      * @param string $message The message to log
      * @param int $severity One of the LOG_* constants
      * @param mixed $additionalData A variable containing more information about the event to be logged
-     * @param string|null $packageKey Key of the package triggering the log (determined automatically if not specified)
-     * @param string|null $className Name of the class triggering the log (determined automatically if not specified)
-     * @param string|null $methodName Name of the method triggering the log (determined automatically if not specified)
+     * @param string|null $packageKey Key of the package triggering the log
+     * @param string|null $className Name of the class triggering the log
+     * @param string|null $methodName Name of the method triggering the log
      * @return void
-     * @api
      */
-    public function append(string $message, int $severity = LOG_INFO, $additionalData = null, string $packageKey = null, string $className = null, string $methodName = null): void
+    public function append(string $message, int $severity = LOG_INFO, $additionalData = null, ?string $packageKey = null, ?string $className = null, ?string $methodName = null): void
     {
         if ($this->capturingMessage) {
             return;
@@ -49,20 +45,12 @@ class SentryFileBackend extends FileBackend
 
             $sentryClient = self::getSentryClient();
             if ($severity <= LOG_NOTICE && $sentryClient) {
-                switch ($severity) {
-                    case LOG_WARNING:
-                        $sentrySeverity = Severity::warning();
-                    break;
-                    case LOG_ERR:
-                        $sentrySeverity = Severity::error();
-                    break;
-                    case LOG_CRIT:
-                    case LOG_ALERT:
-                    case LOG_EMERG:
-                        $sentrySeverity = Severity::fatal();
-                    break;
-                    default:
-                        $sentrySeverity = Severity::info();
+                $sentrySeverity = match ($severity) {
+                    LOG_WARNING => Severity::warning(),
+                    LOG_ERR => Severity::error(),
+                    LOG_CRIT, LOG_ALERT, LOG_EMERG => Severity::fatal(),
+                    default => Severity::info(),
+                };
 
                 }
 
