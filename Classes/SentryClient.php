@@ -16,6 +16,7 @@ namespace Flownative\Sentry;
 use Flownative\Sentry\Context\UserContext;
 use Flownative\Sentry\Context\UserContextServiceInterface;
 use Flownative\Sentry\Context\WithExtraDataInterface;
+use Flownative\Sentry\Log\CaptureResult;
 use GuzzleHttp\Psr7\ServerRequest;
 use Jenssegers\Agent\Agent;
 use Neos\Flow\Annotations as Flow;
@@ -182,11 +183,18 @@ class SentryClient
         return new Options();
     }
 
-    public function captureThrowable(Throwable $throwable, array $extraData = [], array $tags = []): void
+    public function captureThrowable(Throwable $throwable, array $extraData = [], array $tags = []): CaptureResult
     {
         if (empty($this->dsn)) {
-            return;
+            return new CaptureResult(
+                false,
+                'Failed capturing message, because no Sentry DSN was set. Please check your settings.',
+                ''
+            );
         }
+
+        $message = '';
+        $sentryEventId = '';
 
         if ($throwable instanceof WithReferenceCodeInterface) {
             $extraData['Reference Code'] = $throwable->getReferenceCode();
@@ -215,33 +223,23 @@ class SentryClient
             $this->addThrowableToEvent($throwable, $event);
             $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
         } else {
-            $sentryEventId = 'ignored';
+            $message = 'ignored';
         }
-        if ($this->logger) {
-            $this->logger->log(
-                ($captureException ? LogLevel::CRITICAL : LogLevel::NOTICE),
-                sprintf(
-                    'Exception #%s: %s (Ref: %s | Sentry: %s)',
-                    $throwable->getCode(),
-                    $throwable->getMessage(),
-                    ($throwable instanceof WithReferenceCodeInterface ? $throwable->getReferenceCode() : '-'),
-                    $sentryEventId
-                )
-            );
-        }
+        return new CaptureResult(
+    true,
+            $message,
+            (string)$sentryEventId
+        );
     }
 
-    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): ?EventId
+    public function captureMessage(string $message, Severity $severity, array $extraData = [], array $tags = []): CaptureResult
     {
         if (empty($this->dsn)) {
-            if ($this->logger) {
-                $this->logger->warning('Sentry: Failed capturing message, because no Sentry DSN was set. Please check your settings.');
-            }
-            return null;
-        }
-
-        if (preg_match('/Sentry: [0-9a-f]{32}/', $message) === 1) {
-            return null;
+            return new CaptureResult(
+                false,
+                'Failed capturing message, because no Sentry DSN was set. Please check your settings.',
+                ''
+            );
         }
 
         $this->configureScope($extraData, $tags);
@@ -250,18 +248,11 @@ class SentryClient
         ]);
         $sentryEventId = \Sentry\captureMessage($message, $severity, $eventHint);
 
-        if ($this->logger) {
-            $this->logger->log(
-                (string)$severity,
-                sprintf(
-                    '%s (Sentry: %s)',
-                    $message,
-                    $sentryEventId
-                )
-            );
-        }
-
-        return $sentryEventId;
+        return new CaptureResult(
+            true,
+            '',
+            (string)$sentryEventId
+        );
     }
 
     private function configureScope(array $extraData, array $tags): void

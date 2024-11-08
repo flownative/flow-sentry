@@ -15,19 +15,10 @@ namespace Flownative\Sentry\Context;
 
 interface UserContextInterface
 {
-    /**
-     * @return string|null
-     */
     public function getId(): ?string;
 
-    /**
-     * @return string|null
-     */
     public function getUsername(): ?string;
 
-    /**
-     * @return string|null
-     */
     public function getEmail(): ?string;
 
     /**
@@ -36,8 +27,6 @@ interface UserContextInterface
      * "id", "username", "email"
      *
      * The keys must exist, but the values may be empty
-     *
-     * @return array
      */
     public function toArray(): array;
 }

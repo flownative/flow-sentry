@@ -14,18 +14,17 @@ namespace Flownative\Sentry\Command;
  */
 
 use Flownative\Sentry\SentryClient;
-use Flownative\Sentry\Test\JsonSerializableTestArgument;
 use Flownative\Sentry\Test\SentryClientTestException;
 use Flownative\Sentry\Test\StringableTestArgument;
 use Flownative\Sentry\Test\ThrowingClass;
-use Neos\Flow\Annotations\Inject;
+use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Cli\CommandController;
 use Sentry\Severity;
 
 final class SentryCommandController extends CommandController
 {
     /**
-     * @Inject
+     * @Flow\Inject
      * @var SentryClient
      */
     protected $sentryClient;
@@ -43,6 +42,7 @@ final class SentryCommandController extends CommandController
     public function testCommand(): void
     {
         $this->output->outputLine('<b>Testing Sentry setup …</b>');
+        $this->output->outputLine();
         $this->output->outputLine('Using the following configuration:');
 
         $options = $this->sentryClient->getOptions();
@@ -58,7 +58,7 @@ final class SentryCommandController extends CommandController
             'Value'
         ]);
 
-        $eventId = $this->sentryClient->captureMessage(
+        $captureResult = $this->sentryClient->captureMessage(
             'Flownative Sentry Plugin Test',
             Severity::debug(),
             [
@@ -66,7 +66,14 @@ final class SentryCommandController extends CommandController
             ]
         );
 
-        $this->outputLine('<success>An informational message was sent to Sentry</success> Event ID: #%s', [$eventId]);
+        $this->outputLine();
+        $this->outputLine('An informational message was sent to Sentry');
+        if ($captureResult) {
+            $this->outputLine('<success>Event ID: #' . $captureResult->eventId . '</success>');
+        } else {
+            $this->outputLine('<error>' . $captureResult->message . '</error>');
+        }
+
         $this->outputLine();
         $this->outputLine('This command will now throw an exception for testing purposes.');
         $this->outputLine();
