@@ -19,9 +19,6 @@ interface UserContextServiceInterface
 {
     /**
      * Returns ContextData to be added to the sentry entry
-     *
-     * @param Context $securityContext
-     * @return UserContextInterface
      */
     public function getUserContext(Context $securityContext): UserContextInterface;
 }
