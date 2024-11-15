@@ -52,8 +52,6 @@ class SentryFileBackend extends FileBackend
                     default => Severity::info(),
                 };
 
-                }
-
                 $sentryClient->captureMessage($message, $sentrySeverity, ['Additional Data' => $additionalData]);
             }
             parent::append($message, $severity, $additionalData, $packageKey, $className, $methodName);
