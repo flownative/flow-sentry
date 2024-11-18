@@ -189,6 +189,7 @@ class SentryClient
 
         $captureException = (!in_array(get_class($throwable), $this->excludeExceptionTypes, true));
         if ($captureException) {
+            $this->setTags();
             $this->configureScope($extraData, $tags);
             if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
                 SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope): void {
@@ -225,6 +226,7 @@ class SentryClient
         $eventHint = EventHint::fromArray([
             'stacktrace' => $this->prepareStacktrace()
         ]);
+        $this->setTags();
         $sentryEventId = \Sentry\captureMessage($message, $severity, $eventHint);
 
         if ($this->logger) {
