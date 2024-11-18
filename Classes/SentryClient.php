@@ -282,7 +282,6 @@ class SentryClient
                 $scope->setTag($tagKey, $tagValue);
             }
             $scope->setUser($userContext->toArray());
-            $scope->setLevel(null);
         });
     }
 
