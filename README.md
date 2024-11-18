@@ -60,22 +60,26 @@ The default is 1 – 100% percent of all errors are sampled.
 
 Throwables (that includes exceptions and runtime errors) are logged as
 Sentry events. You may specify a list of exceptions which should not be
-recorded. If such an exception is thrown, it will only be logged as a
-"notice".
+recorded.
 
 ```yaml
 Flownative:
   Sentry:
     capture:
       excludeExceptionTypes:
-        - 'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException'
+        'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
 ```
 
-If an ignored exception is handled by this Sentry client, it is logged
-similar to the following message:
+By default all Flow exceptions with a status code of 404 are ignored. In case
+you want to see those in Sentry, you can include them case-by-case like so:
 
-```
-… NOTICE Exception 12345: The exception message (Ref: 202004161706040c28ae | Sentry: ignored)
+```yaml
+Flownative:
+  Sentry:
+    capture:
+      excludeExceptionTypes:
+        'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': false
+        'Neos\Flow\Mvc\Exception\NoSuchControllerException': false
 ```
 
 ## Additional Data

@@ -20,7 +20,6 @@ use Flownative\Sentry\Log\CaptureResult;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
-use Neos\Flow\Exception;
 use Neos\Flow\Package\Exception\UnknownPackageException;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Security\Context as SecurityContext;
@@ -177,13 +176,18 @@ class SentryClient
         if (empty($this->dsn)) {
             return new CaptureResult(
                 false,
-                'Failed capturing message, because no Sentry DSN was set. Please check your settings.',
+                'Failed capturing throwable, because no Sentry DSN was set. Please check your settings.',
                 ''
             );
         }
 
-        $message = '';
-        $sentryEventId = '';
+        if ($this->shouldExcludeException($throwable)) {
+            return new CaptureResult(
+                true,
+                'Skipped capturing throwable, it is listed in excludeExceptionTypes',
+                ''
+            );
+        }
 
         if ($throwable instanceof WithReferenceCodeInterface) {
             $extraData['Reference Code'] = $throwable->getReferenceCode();
@@ -200,24 +204,15 @@ class SentryClient
 
         $tags['exception_code'] = (string)$throwable->getCode();
 
-        $captureException = (!in_array(get_class($throwable), $this->excludeExceptionTypes, true));
-        if ($captureException) {
-            $this->setTags();
-            $this->configureScope($extraData, $tags);
-            if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
-                SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope): void {
-                    $scope->setLevel(Severity::warning());
-                });
-            }
-            $event = Event::createEvent();
-            $this->addThrowableToEvent($throwable, $event);
-            $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
-        } else {
-            $message = 'ignored';
-        }
+        $this->setTags();
+        $this->configureScope($extraData, $tags);
+        $event = Event::createEvent();
+        $this->addThrowableToEvent($throwable, $event);
+        $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
+
         return new CaptureResult(
             true,
-            $message,
+            '',
             (string)$sentryEventId
         );
     }
@@ -256,6 +251,12 @@ class SentryClient
         return $sentryEventId;
     }
 
+    private function shouldExcludeException(\Throwable $throwable): bool
+    {
+        $excludedExceptions = array_keys(array_filter($this->excludeExceptionTypes));
+        return in_array(get_class($throwable), $excludedExceptions, true);
+    }
+
     private function configureScope(array $extraData, array $tags): void
     {
         $securityContext = Bootstrap::$staticObjectManager->get(SecurityContext::class);
@@ -273,7 +274,6 @@ class SentryClient
                 $scope->setTag($tagKey, $tagValue);
             }
             $scope->setUser($userContext->toArray());
-            $scope->setLevel(null);
         });
     }
 

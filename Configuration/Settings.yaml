@@ -5,7 +5,12 @@ Flownative:
     release: "%env:SENTRY_RELEASE%"
     sampleRate: 1.0
     capture:
-      excludeExceptionTypes: []
+      excludeExceptionTypes:
+        'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
+        'Neos\Flow\Mvc\Exception\NoMatchingRouteException': true
+        'Neos\Flow\Mvc\Exception\NoSuchActionException': true
+        'Neos\Flow\Mvc\Exception\NoSuchControllerException': true
+        'Neos\Flow\Property\Exception\TargetNotFoundException': true
 
 Neos:
   Flow:
