@@ -22,7 +22,7 @@ class JsonSerializableTestArgument implements \JsonSerializable
         $this->value = $value;
     }
 
-    public function jsonSerialize()
+    public function jsonSerialize(): int
     {
         return $this->value;
     }
