@@ -9,10 +9,13 @@ reporting of errors to [Sentry](https://www.sentry.io)
 
 ## Key Features
 
-This package makes sure that exceptions and errors logged by the Flow 
-framework also end up in Sentry. This client takes some extra care to
-clean up paths and filenames of stacktraces so you get good overview
-while looking at an issue in the Sentry UI.
+This package makes sure that throwables and exceptions logged in a Flow
+application also end up in Sentry. This is done by implementing Flow's
+`ThrowableStorageInterface` and configuring the default implementation.
+
+This packages takes some extra care to  clean up paths and filenames of
+stacktraces so you get a good overview while looking at an issue in the
+Sentry UI.
 
 ## Installation
 
@@ -29,7 +32,13 @@ $ composer require flownative/sentry
 You need to at least specify a DSN to be used as a logging target. Apart
 from that, you can configure the Sentry environment and release. These
 options can either be set in the Flow settings or, more conveniently, by
-setting the respective environment variables.
+setting the respective environment variables:
+
+- `SENTRY_DSN`
+- `SENTRY_ENVIRONMENT`
+- `SENTRY_RELEASE`
+
+The package uses these environment variables by default in the settings:
 
 ```yaml
 Flownative:
@@ -71,12 +80,12 @@ similar to the following message:
 
 ## Additional Data
 
-Exceptions declared in an application can optionally implement 
-`WithAdditionalDataInterface` provided by this package. If they do, the 
-array returned by `getAdditionalData()` will be visible in the "additional 
+Exceptions declared in an application can optionally implement
+`WithAdditionalDataInterface` provided by this package. If they do, the
+array returned by `getAdditionalData()` will be visible in the "additional
 data" section in Sentry.
 
-Note that the array must only contain values of simple types, such as 
+Note that the array must only contain values of simple types, such as
 strings, booleans or integers.
 
 ## Testing the Client
@@ -90,35 +99,39 @@ Run the following command in your terminal to test your configuration:
 ./flow sentry:test
 Testing Sentry setup …
 Using the following configuration:
-+-------------+------------------------------------------------------------+
-| Option      | Value                                                      |
-+-------------+------------------------------------------------------------+
++-------------+----------------------------------------------------------+
+| Option      | Value                                                    |
++-------------+----------------------------------------------------------+
 | DSN         | https://abc123456789abcdef1234567890ab@sentry.io/1234567 |
-| Environment | development                                                |
-| Release     | dev                                                        |
-| Server Name | test_container                                             |
-| Sample Rate | 1                                                          |
-+-------------+------------------------------------------------------------+
-An informational message was sent to Sentry Event ID: #587abc123457abcd8f873b4212345678
+| Environment | development                                              |
+| Release     | dev                                                      |
+| Server Name | test_container                                           |
+| Sample Rate | 1                                                        |
++-------------+----------------------------------------------------------+
 
 This command will now throw an exception for testing purposes.
 
-Test exception in SentryCommandController
+Test exception in ThrowingClass
 
-  Type: Flownative\Sentry\Exception\SentryClientTestException
-  Code: 1614759519
+  Type: Flownative\Sentry\Test\SentryClientTestException
+  Code: 1662712736
   File: Data/Temporary/Development/SubContextBeach/SubContextInstance/Cache/Code/Fl
-        ow_Object_Classes/Flownative_Sentry_Command_SentryCommandController.php
-  Line: 79
+        ow_Object_Classes/Flownative_Sentry_Test_ThrowingClass.php
+  Line: 41
 
 Nested exception:
-Test "previous" exception thrown by the SentryCommandController
+Test "previous" exception in ThrowingClass
 
   Type: RuntimeException
-  Code: 1614759554
+  Code: 1662712735
   File: Data/Temporary/Development/SubContextBeach/SubContextInstance/Cache/Code/Fl
-        ow_Object_Classes/Flownative_Sentry_Command_SentryCommandController.php
-  Line: 78
+        ow_Object_Classes/Flownative_Sentry_Test_ThrowingClass.php
+  Line: 40
 
-Open Data/Logs/Exceptions/2021030308325919ecbf.txt for a full stack trace.
+Open Data/Logs/Exceptions/202411181211403b652e.txt for a full stack trace.
 ```
+
+There are two more test modes for message capturing and error handling:
+
+- `./flow sentry:test --mode message`
+- `./flow sentry:test --mode error`

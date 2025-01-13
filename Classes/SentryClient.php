@@ -17,8 +17,6 @@ use Flownative\Sentry\Context\UserContext;
 use Flownative\Sentry\Context\UserContextServiceInterface;
 use Flownative\Sentry\Context\WithExtraDataInterface;
 use Flownative\Sentry\Log\CaptureResult;
-use GuzzleHttp\Psr7\ServerRequest;
-use Jenssegers\Agent\Agent;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
@@ -31,7 +29,6 @@ use Neos\Flow\Session\SessionManagerInterface;
 use Neos\Flow\Utility\Environment;
 use Neos\Utility\Arrays;
 use Psr\Log\LoggerInterface;
-use Psr\Log\LogLevel;
 use Sentry\Event;
 use Sentry\EventHint;
 use Sentry\EventId;
@@ -93,6 +90,10 @@ class SentryClient
 
     public function initializeObject(): void
     {
+        if (empty($this->dsn)) {
+            return;
+        }
+
         $representationSerializer = new RepresentationSerializer(
             new Options([])
         );
@@ -101,10 +102,6 @@ class SentryClient
             new Options([]),
             $representationSerializer
         );
-
-        if (empty($this->dsn)) {
-            return;
-        }
 
         \Sentry\init([
             'dsn' => $this->dsn,
@@ -118,8 +115,7 @@ class SentryClient
                 FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
                 FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
             ],
-            'default_integrations' => false,
-            'attach_stacktrace' => true
+            'attach_stacktrace' => true,
         ]);
 
         $client = SentrySdk::getCurrentHub()->getClient();
@@ -136,38 +132,18 @@ class SentryClient
             try {
                 $flowPackage = $this->packageManager->getPackage('Neos.Flow');
                 $flowVersion = $flowPackage->getInstalledVersion();
-            } catch (UnknownPackageException $e) {
+            } catch (UnknownPackageException) {
             }
         }
         if (empty($flowVersion)) {
             $flowVersion = FLOW_VERSION_BRANCH;
         }
 
-        $currentSession = null;
-        if ($this->sessionManager) {
-            $currentSession = $this->sessionManager->getCurrentSession();
-        }
+        $currentSession = $this->sessionManager?->getCurrentSession();
 
         SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion, $currentSession): void {
             $scope->setTag('flow_version', $flowVersion);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
-            $scope->setTag('php_version', PHP_VERSION);
-
-            if (PHP_SAPI !== 'cli') {
-                $scope->setTag('uri',
-                    (string)ServerRequest::fromGlobals()->getUri());
-
-                $agent = new Agent();
-                $scope->setContext('client_os', [
-                    'name' => $agent->platform(),
-                    'version' => $agent->version($agent->platform())
-                ]);
-
-                $scope->setContext('client_browser', [
-                    'name' => $agent->browser(),
-                    'version' => $agent->version($agent->browser())
-                ]);
-            }
 
             if ($currentSession instanceof Session && $currentSession->isStarted()) {
                 $scope->setTag('flow_session_sha1', sha1($currentSession->getId()));
@@ -213,6 +189,7 @@ class SentryClient
 
         $captureException = (!in_array(get_class($throwable), $this->excludeExceptionTypes, true));
         if ($captureException) {
+            $this->setTags();
             $this->configureScope($extraData, $tags);
             if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
                 SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope): void {
@@ -226,7 +203,7 @@ class SentryClient
             $message = 'ignored';
         }
         return new CaptureResult(
-    true,
+            true,
             $message,
             (string)$sentryEventId
         );
@@ -249,6 +226,7 @@ class SentryClient
         $eventHint = EventHint::fromArray([
             'stacktrace' => $this->prepareStacktrace()
         ]);
+        $this->setTags();
         $sentryEventId = \Sentry\captureMessage($message, $severity, $eventHint);
 
         if ($this->logger) {
@@ -326,7 +304,7 @@ class SentryClient
                 $frame->getRawFunctionName(),
                 $frame->getAbsoluteFilePath(),
                 $frame->getVars(),
-                strpos($classPathAndFilename, 'Packages/Framework/') === false
+                !str_contains($classPathAndFilename, 'Packages/Framework/')
             );
         }
         return new Stacktrace($frames);
