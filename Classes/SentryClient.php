@@ -53,7 +53,7 @@ class SentryClient
     protected string $release;
     protected float $sampleRate;
     protected array $excludeExceptionTypes = [];
-    protected StacktraceBuilder $stacktraceBuilder;
+    protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
      * @Flow\Inject
@@ -282,8 +282,12 @@ class SentryClient
         return str_replace(['_', FLOW_PATH_ROOT], '/', $matches[1]);
     }
 
-    private function prepareStacktrace(\Throwable $throwable = null): Stacktrace
+    private function prepareStacktrace(\Throwable $throwable = null): ?Stacktrace
     {
+        if ($this->stacktraceBuilder === null) {
+            return null;
+        }
+
         if ($throwable) {
             $stacktrace = $this->stacktraceBuilder->buildFromException($throwable);
         } else {
