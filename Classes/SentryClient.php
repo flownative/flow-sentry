@@ -51,7 +51,8 @@ class SentryClient
     protected string $dsn;
     protected string $environment;
     protected string $release;
-    protected float $sampleRate;
+
+    protected float $sampleRate = 1;
     protected array $excludeExceptionTypes = [];
     protected StacktraceBuilder $stacktraceBuilder;
 
@@ -79,11 +80,23 @@ class SentryClient
      */
     protected $packageManager;
 
+    public function __construct()
+    {
+        // Try to set from environment variables – this allows for very early use.
+        // If not set, the results will be empty strings. See injectSettings() below.
+        $this->dsn = (string)getenv('SENTRY_DSN');
+        $this->environment = (string)getenv('SENTRY_ENVIRONMENT');
+        $this->release = (string)getenv('SENTRY_RELEASE');
+    }
+
     public function injectSettings(array $settings): void
     {
-        $this->dsn = $settings['dsn'] ?: '';
-        $this->environment = $settings['environment'] ?: '';
-        $this->release = $settings['release'] ?: '';
+        // Override from configuration, if available — else fall back to settings
+        // set from environment variables.
+        $this->dsn = $settings['dsn'] ?: $this->dsn;
+        $this->environment = $settings['environment'] ?: $this->environment;
+        $this->release = $settings['release'] ?: $this->release;
+
         $this->sampleRate = (float)($settings['sampleRate'] ?? 1);
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
     }
