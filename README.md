@@ -60,22 +60,26 @@ The default is 1 – 100% percent of all errors are sampled.
 
 Throwables (that includes exceptions and runtime errors) are logged as
 Sentry events. You may specify a list of exceptions which should not be
-recorded. If such an exception is thrown, it will only be logged as a
-"notice".
+recorded.
 
 ```yaml
 Flownative:
   Sentry:
     capture:
       excludeExceptionTypes:
-        - 'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException'
+        'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
 ```
 
-If an ignored exception is handled by this Sentry client, it is logged
-similar to the following message:
+By default all Flow exceptions with a status code of 404 are ignored. in case
+you want to see those in Sentry, you can include them case-by-case like so:
 
-```
-… NOTICE Exception 12345: The exception message (Ref: 202004161706040c28ae | Sentry: ignored)
+```yaml
+Flownative:
+  Sentry:
+    capture:
+      excludeExceptionTypes:
+        'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': false
+        'Neos\Flow\Mvc\Exception\NoSuchControllerException': false
 ```
 
 ## Additional Data
@@ -87,6 +91,28 @@ data" section in Sentry.
 
 Note that the array must only contain values of simple types, such as
 strings, booleans or integers.
+
+## Logging integration
+
+### Breadcrumb handler
+
+This package configures a logging backend to add messages as breadcrumbs to
+be sent to Sentry when an exception happens. This provides more information
+on what happened before an exception.
+
+For more information on breadcrumbs see the Sentry documentation at
+https://docs.sentry.io/platforms/php/enriching-events/breadcrumbs/
+
+### Monolog
+
+In case you want to store all log messages in Sentry, one way is to configure
+Flow to use monolog for logging and then add the `Sentry\Monolog\Handler` to
+the setup.
+
+Keep in mind that the breadcrumb handler provided by this package might be
+disabled when doing this, depending on your configuration. Sentry provides
+a monolog integration for that purpose, see `Sentry\Monolog\BreadcrumbHandler`
+and https://docs.sentry.io/platforms/php/integrations/monolog/. 
 
 ## Testing the Client
 

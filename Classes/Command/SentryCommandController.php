@@ -77,7 +77,7 @@ final class SentryCommandController extends CommandController
 
     private function captureMessage(): void
     {
-        $eventId = $this->sentryClient->captureMessage(
+        $captureResult = $this->sentryClient->captureMessage(
             'Flownative Sentry Plugin Test',
             Severity::debug(),
             [
@@ -86,7 +86,11 @@ final class SentryCommandController extends CommandController
         );
 
         $this->outputLine();
-        $this->outputLine('<success>An informational message was sent to Sentry</success> Event ID: #%s', [$eventId]);
+        if ($captureResult->suceess) {
+            $this->outputLine('<success>An informational message was sent to Sentry</success> Event ID: #%s', [$captureResult->eventId]);
+        } else {
+            $this->outputLine('<error>Sending an informational message to Sentry failed</error>: %s', [$captureResult->message]);
+        }
         $this->outputLine();
     }
 

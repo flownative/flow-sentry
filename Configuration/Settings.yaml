@@ -5,13 +5,21 @@ Flownative:
     release: "%env:SENTRY_RELEASE%"
     sampleRate: 1.0
     capture:
-      excludeExceptionTypes: []
+      excludeExceptionTypes:
+        'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
+        'Neos\Flow\Mvc\Exception\NoMatchingRouteException': true
+        'Neos\Flow\Mvc\Exception\NoSuchActionException': true
+        'Neos\Flow\Mvc\Exception\NoSuchControllerException': true
+        'Neos\Flow\Property\Exception\TargetNotFoundException': true
 
 Neos:
   Flow:
     log:
-      systemLogger:
-        backend: Flownative\Sentry\Log\SentryFileBackend
+      psr3:
+        Neos\Flow\Log\PsrLoggerFactory:
+          systemLogger:
+            default:
+              class: 'Flownative\Sentry\Log\SentryFileBackend'
       throwables:
         storageClass: 'Flownative\Sentry\Log\SentryStorage'
         optionsByImplementation:

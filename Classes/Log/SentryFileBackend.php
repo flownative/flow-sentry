@@ -15,13 +15,12 @@ namespace Flownative\Sentry\Log;
 
 use Flownative\Sentry\SentryClientTrait;
 use Neos\Flow\Log\Backend\FileBackend;
-use Sentry\Severity;
+use Sentry\Breadcrumb;
+use Sentry\SentrySdk;
 
 class SentryFileBackend extends FileBackend
 {
     use SentryClientTrait;
-
-    private bool $capturingMessage = false;
 
     /**
      * Appends the given message along with the additional information into the log.
@@ -36,29 +35,50 @@ class SentryFileBackend extends FileBackend
      */
     public function append(string $message, int $severity = LOG_INFO, $additionalData = null, ?string $packageKey = null, ?string $className = null, ?string $methodName = null): void
     {
-        if ($this->capturingMessage) {
-            return;
-        }
-
         try {
-            $this->capturingMessage = true;
-
-            $sentryClient = self::getSentryClient();
-            if ($severity <= LOG_NOTICE && $sentryClient) {
-                $sentrySeverity = match ($severity) {
-                    LOG_WARNING => Severity::warning(),
-                    LOG_ERR => Severity::error(),
-                    LOG_CRIT, LOG_ALERT, LOG_EMERG => Severity::fatal(),
-                    default => Severity::info(),
-                };
-
-                $sentryClient->captureMessage($message, $sentrySeverity, ['Additional Data' => $additionalData]);
-            }
-            parent::append($message, $severity, $additionalData, $packageKey, $className, $methodName);
+            SentrySdk::getCurrentHub()->addBreadcrumb(
+                new Breadcrumb(
+                    $this->getBreadcrumbLevel($severity),
+                    $this->getBreadcrumbType($severity),
+                    basename($this->logFileUrl),
+                    $message,
+                    ($additionalData ?? []) + array_filter([
+                        'packageKey' => $packageKey, 'className' => $className, 'methodName' => $methodName
+                    ]),
+                    time()
+                )
+            );
         } catch (\Throwable $throwable) {
-            echo sprintf('SentryFileBackend: %s (%s)', $throwable->getMessage(), $throwable->getCode());
-        } finally {
-            $this->capturingMessage = false;
+            parent::append(
+                sprintf('%s (%s)', $throwable->getMessage(), $throwable->getCode()),
+                LOG_WARNING,
+                null,
+                'Flownative.Sentry',
+                __CLASS__,
+                __METHOD__
+            );
         }
+
+        parent::append($message, $severity, $additionalData, $packageKey, $className, $methodName);
+    }
+
+    private function getBreadcrumbLevel(int $severity): string
+    {
+        return match ($severity) {
+            LOG_EMERG, LOG_ALERT, LOG_CRIT => Breadcrumb::LEVEL_FATAL,
+            LOG_ERR => Breadcrumb::LEVEL_ERROR,
+            LOG_WARNING => Breadcrumb::LEVEL_WARNING,
+            LOG_NOTICE, LOG_INFO => Breadcrumb::LEVEL_INFO,
+            default => Breadcrumb::LEVEL_DEBUG,
+        };
+    }
+
+    private function getBreadcrumbType(int $severity): string
+    {
+        if ($severity >= LOG_ERR) {
+            return Breadcrumb::TYPE_ERROR;
+        }
+
+        return Breadcrumb::TYPE_DEFAULT;
     }
 }
