@@ -54,6 +54,8 @@ class SentryClient
 
     protected float $sampleRate = 1;
     protected array $excludeExceptionTypes = [];
+    protected array $excludeExceptionMessagePatterns = [];
+    protected array $excludeExceptionCodes = [];
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -99,6 +101,8 @@ class SentryClient
 
         $this->sampleRate = (float)($settings['sampleRate'] ?? 1);
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
+        $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
+        $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
     }
 
     public function initializeObject(): void
@@ -200,7 +204,12 @@ class SentryClient
 
         $tags['exception_code'] = (string)$throwable->getCode();
 
-        $captureException = (!in_array(get_class($throwable), $this->excludeExceptionTypes, true));
+        $isThrowableExcludedByClass = in_array(get_class($throwable), $this->excludeExceptionTypes, true);
+        $isThrowableExcludedByMessagePattern = array_reduce($this->excludeExceptionMessagePatterns, static function($carry, $pattern) use ($throwable) {
+            return $carry || preg_match($pattern, $throwable->getMessage());
+        }, false);
+        $isThrowableExcludedByCode = in_array($throwable->getCode(), $this->excludeExceptionCodes, true);
+        $captureException = !$isThrowableExcludedByClass && !$isThrowableExcludedByMessagePattern && !$isThrowableExcludedByCode;
         if ($captureException) {
             $this->setTags();
             $this->configureScope($extraData, $tags);

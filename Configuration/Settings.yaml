@@ -6,6 +6,8 @@ Flownative:
     sampleRate: 1.0
     capture:
       excludeExceptionTypes: []
+      excludeExceptionMessagePatterns: []
+      excludeExceptionCodes: []
 
 Neos:
   Flow:
