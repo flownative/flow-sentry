@@ -206,7 +206,7 @@ class SentryClient
 
         $isThrowableExcludedByClass = in_array(get_class($throwable), $this->excludeExceptionTypes, true);
         $isThrowableExcludedByMessagePattern = array_reduce($this->excludeExceptionMessagePatterns, static function($carry, $pattern) use ($throwable) {
-            return $carry || preg_match($pattern, $throwable->getMessage());
+            return $carry || preg_match($pattern, $throwable->getMessage()) === 1;
         }, false);
         $isThrowableExcludedByCode = in_array($throwable->getCode(), $this->excludeExceptionCodes, true);
         $captureException = !$isThrowableExcludedByClass && !$isThrowableExcludedByMessagePattern && !$isThrowableExcludedByCode;
