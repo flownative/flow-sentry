@@ -82,13 +82,17 @@ class SentryClient
      */
     protected $packageManager;
 
-    public function __construct()
+    public function __construct(array $settings = [])
     {
         // Try to set from environment variables – this allows for very early use.
         // If not set, the results will be empty strings. See injectSettings() below.
         $this->dsn = (string)getenv('SENTRY_DSN');
         $this->environment = (string)getenv('SENTRY_ENVIRONMENT');
         $this->release = (string)getenv('SENTRY_RELEASE');
+
+        if (!empty($settings)) {
+            $this->injectSettings($settings);
+        }
     }
 
     public function injectSettings(array $settings): void
