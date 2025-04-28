@@ -41,6 +41,7 @@ use Sentry\Severity;
 use Sentry\Stacktrace;
 use Sentry\StacktraceBuilder;
 use Sentry\State\Scope;
+use Sentry\Tracing\Transaction;
 use Throwable;
 
 /**
@@ -137,6 +138,27 @@ class SentryClient
                 FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
             ],
             'attach_stacktrace' => true,
+            'error_types' => E_ERROR,
+            'before_send' => function (Event $event, EventHint $hint): ?Event {
+                $isExcludedByMessagePattern = array_reduce($this->excludeExceptionMessagePatterns, static function($carry, $pattern) use ($event, $hint) {
+                    return $carry || preg_match($pattern, $event->getMessage()) === 1;
+                }, false);
+                if ($isExcludedByMessagePattern) {
+                    return null;
+                }
+
+                $isThrowableExcludedByClass = $hint->exception && in_array(get_class($hint->exception), $this->excludeExceptionTypes, true);
+                if ($isThrowableExcludedByClass) {
+                    return null;
+                }
+
+                $isThrowableExcludedByCode = $hint->exception ?? in_array($hint->exception->getCode(), $this->excludeExceptionCodes, true);
+                if ($isThrowableExcludedByCode) {
+                    return null;
+                }
+
+                return $event;
+            },
         ]);
 
         $client = SentrySdk::getCurrentHub()->getClient();
