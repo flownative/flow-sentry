@@ -9,6 +9,7 @@ Flownative:
       excludeExceptionMessagePatterns: []
       excludeExceptionCodes: []
       errorLevel: '%E_ERROR%'
+
 Neos:
   Flow:
     log:
