@@ -58,9 +58,21 @@ Flownative:
 
 The default is 1 – 100% percent of all errors are sampled.
 
+The PHP error level for automatically detected errors by the Sentry SDK can be set using
+
+```yaml
+Flownative:
+  Sentry:
+    errorTypes: '%E_ERROR%'
+```
+
+The default is `E_ERROR`. See [PHP error constants](https://www.php.net/manual/en/errorfunc.constants.php) for available error levels.
+
+**Beware:** a low error log level can lead to your application not loading anymore and your Sentry account being flooded with error messages.
+
 Throwables (that includes exceptions and runtime errors) are logged as
-Sentry events. You may specify a list of exceptions which should not be
-recorded. If such an exception is thrown, it will only be logged as a
+Sentry events. You may specify a list of exceptions types, exception message regular expressions or exception codes
+which should not be recorded. If such an exception is thrown, it will only be logged as a
 "notice".
 
 ```yaml
@@ -69,6 +81,10 @@ Flownative:
     capture:
       excludeExceptionTypes:
         - 'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException'
+      excludeExceptionMessagePatterns:
+          - '/^Warning: fopen\(.*/'
+      excludeExceptionCodes:
+          - 1391972021
 ```
 
 If an ignored exception is handled by this Sentry client, it is logged

@@ -83,6 +83,11 @@ class SentryClient
      */
     protected $packageManager;
 
+    /**
+     * @var int
+     */
+    protected int $errorLevel;
+
     public function __construct(array $settings = [])
     {
         // Try to set from environment variables – this allows for very early use.
@@ -108,6 +113,7 @@ class SentryClient
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
+        $this->errorLevel = $settings['errorLevel'] ?? E_ERROR;
     }
 
     public function initializeObject(): void
@@ -138,22 +144,10 @@ class SentryClient
                 FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
             ],
             'attach_stacktrace' => true,
-            'error_types' => E_ERROR,
-            'before_send' => function (Event $event, EventHint $hint): ?Event {
-                $isExcludedByMessagePattern = array_reduce($this->excludeExceptionMessagePatterns, static function($carry, $pattern) use ($event, $hint) {
-                    return $carry || preg_match($pattern, $event->getMessage()) === 1;
-                }, false);
-                if ($isExcludedByMessagePattern) {
-                    return null;
-                }
-
-                $isThrowableExcludedByClass = $hint->exception && in_array(get_class($hint->exception), $this->excludeExceptionTypes, true);
-                if ($isThrowableExcludedByClass) {
-                    return null;
-                }
-
-                $isThrowableExcludedByCode = $hint->exception ?? in_array($hint->exception->getCode(), $this->excludeExceptionCodes, true);
-                if ($isThrowableExcludedByCode) {
+            'error_types' => $this->errorLevel,
+            'before_send' => function (Event $event, ?EventHint $hint): ?Event {
+                $hasThrowableAndShouldSkip = $hint?->exception && !$this->shouldCaptureThrowable($hint->exception);
+                if ($hasThrowableAndShouldSkip) {
                     return null;
                 }
 
@@ -230,12 +224,7 @@ class SentryClient
 
         $tags['exception_code'] = (string)$throwable->getCode();
 
-        $isThrowableExcludedByClass = in_array(get_class($throwable), $this->excludeExceptionTypes, true);
-        $isThrowableExcludedByMessagePattern = array_reduce($this->excludeExceptionMessagePatterns, static function($carry, $pattern) use ($throwable) {
-            return $carry || preg_match($pattern, $throwable->getMessage()) === 1;
-        }, false);
-        $isThrowableExcludedByCode = in_array($throwable->getCode(), $this->excludeExceptionCodes, true);
-        $captureException = !$isThrowableExcludedByClass && !$isThrowableExcludedByMessagePattern && !$isThrowableExcludedByCode;
+        $captureException = $this->shouldCaptureThrowable($throwable);
         if ($captureException) {
             $this->setTags();
             $this->configureScope($extraData, $tags);
@@ -378,5 +367,27 @@ class SentryClient
         } while ($throwable = $throwable->getPrevious());
 
         $event->setExceptions($exceptions);
+    }
+
+    private function shouldCaptureThrowable(Throwable $throwable): bool
+    {
+        $isExcludedByMessagePattern = array_reduce($this->excludeExceptionMessagePatterns, static function($carry, $pattern) use ($throwable) {
+            return $carry || preg_match($pattern, $throwable->getMessage()) === 1;
+        }, false);
+        if ($isExcludedByMessagePattern) {
+            return false;
+        }
+
+        $isThrowableExcludedByClass = in_array(get_class($throwable), $this->excludeExceptionTypes, true);
+        if ($isThrowableExcludedByClass) {
+            return false;
+        }
+
+        $isThrowableExcludedByCode = in_array($throwable->getCode(), $this->excludeExceptionCodes, true);
+        if ($isThrowableExcludedByCode) {
+            return false;
+        }
+
+        return true;
     }
 }
