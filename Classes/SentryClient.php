@@ -53,6 +53,7 @@ class SentryClient
     protected string $release;
 
     protected float $sampleRate = 1;
+    protected int $errorLevel;
     protected array $excludeExceptionTypes = [];
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
@@ -81,11 +82,6 @@ class SentryClient
      * @var PackageManager
      */
     protected $packageManager;
-
-    /**
-     * @var int
-     */
-    protected int $errorLevel;
 
     public function __construct(array $settings = [])
     {
