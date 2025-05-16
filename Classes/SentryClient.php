@@ -41,7 +41,6 @@ use Sentry\Severity;
 use Sentry\Stacktrace;
 use Sentry\StacktraceBuilder;
 use Sentry\State\Scope;
-use Sentry\Tracing\Transaction;
 use Throwable;
 
 /**
