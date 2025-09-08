@@ -121,6 +121,7 @@ class SentryClient
             'environment' => $this->environment,
             'release' => $this->release,
             'sample_rate' => $this->sampleRate,
+            'ignore_exceptions' => $this->excludeExceptionTypes,
             'in_app_exclude' => [
                 FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
                 FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
@@ -200,21 +201,18 @@ class SentryClient
 
         $tags['exception_code'] = (string)$throwable->getCode();
 
-        $captureException = (!in_array(get_class($throwable), $this->excludeExceptionTypes, true));
-        if ($captureException) {
-            $this->setTags();
-            $this->configureScope($extraData, $tags);
-            if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
-                SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope): void {
-                    $scope->setLevel(Severity::warning());
-                });
-            }
-            $event = Event::createEvent();
-            $this->addThrowableToEvent($throwable, $event);
-            $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
-        } else {
-            $message = 'ignored';
+        
+        $this->setTags();
+        $this->configureScope($extraData, $tags);
+        if ($throwable instanceof Exception && $throwable->getStatusCode() === 404) {
+            SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope): void {
+                $scope->setLevel(Severity::warning());
+            });
         }
+        $event = Event::createEvent();
+        $this->addThrowableToEvent($throwable, $event);
+        $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
+        
         return new CaptureResult(
             true,
             $message,
