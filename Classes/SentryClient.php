@@ -120,6 +120,7 @@ class SentryClient
             'environment' => $this->environment,
             'release' => $this->release,
             'sample_rate' => $this->sampleRate,
+            'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
             'in_app_exclude' => [
                 FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
                 FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
@@ -184,7 +185,7 @@ class SentryClient
         if ($this->shouldExcludeException($throwable)) {
             return new CaptureResult(
                 true,
-                'Skipped capturing throwable, it is listed in excludeExceptionTypes',
+                'skipped excluded exception type',
                 ''
             );
         }
