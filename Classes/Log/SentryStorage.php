@@ -65,17 +65,19 @@ class SentryStorage implements ThrowableStorageInterface
         try {
             if ($sentryClient = self::getSentryClient()) {
                 $captureResult = $sentryClient->captureThrowable($throwable, $additionalData);
-                if ($captureResult->suceess) {
-                    $message .= ' (Sentry: #' . $captureResult->eventId . ')';
-                } else {
-                    $message .= ' (Sentry: ' . $captureResult->message . ')';
-                }
+
+                return sprintf(
+                    '%s (Sentry: %s – %s)',
+                    $message,
+                    $captureResult->eventId ? '#' . $captureResult->eventId : 'no ID',
+                    $captureResult->message ?: ($captureResult->suceess ? 'ok' : 'failed'),
+                );
             }
         } catch (\Throwable $e) {
-            $message .= ' – Error capturing message: ' . $this->getErrorLogMessage($e);
+            return $message . ' (Sentry: Error capturing message – ' . $this->getErrorLogMessage($e);
         }
 
-        return $message;
+        return $message . '(Sentry: no client available)';
     }
 
     protected function getErrorLogMessage(\Throwable $error): string

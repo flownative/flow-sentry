@@ -52,7 +52,10 @@ class SentryClient
     protected string $release;
 
     protected float $sampleRate = 1;
+    protected int $errorLevel;
     protected array $excludeExceptionTypes = [];
+    protected array $excludeExceptionMessagePatterns = [];
+    protected array $excludeExceptionCodes = [];
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -79,13 +82,17 @@ class SentryClient
      */
     protected $packageManager;
 
-    public function __construct()
+    public function __construct(array $settings = [])
     {
         // Try to set from environment variables – this allows for very early use.
         // If not set, the results will be empty strings. See injectSettings() below.
         $this->dsn = (string)getenv('SENTRY_DSN');
         $this->environment = (string)getenv('SENTRY_ENVIRONMENT');
         $this->release = (string)getenv('SENTRY_RELEASE');
+
+        if (!empty($settings)) {
+            $this->injectSettings($settings);
+        }
     }
 
     public function injectSettings(array $settings): void
@@ -98,6 +105,9 @@ class SentryClient
 
         $this->sampleRate = (float)($settings['sampleRate'] ?? 1);
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
+        $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
+        $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
+        $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
     }
 
     public function initializeObject(): void
@@ -120,6 +130,7 @@ class SentryClient
             'environment' => $this->environment,
             'release' => $this->release,
             'sample_rate' => $this->sampleRate,
+            'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
             'in_app_exclude' => [
                 FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
                 FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
@@ -128,6 +139,15 @@ class SentryClient
                 FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
             ],
             'attach_stacktrace' => true,
+            'error_types' => $this->errorLevel,
+            'before_send' => function (Event $event, ?EventHint $hint): ?Event {
+                $hasThrowableAndShouldSkip = $hint?->exception && $this->shouldExcludeException($hint->exception);
+                if ($hasThrowableAndShouldSkip) {
+                    return null;
+                }
+
+                return $event;
+            }
         ]);
 
         $client = SentrySdk::getCurrentHub()->getClient();
@@ -184,7 +204,7 @@ class SentryClient
         if ($this->shouldExcludeException($throwable)) {
             return new CaptureResult(
                 true,
-                'Skipped capturing throwable, it is listed in excludeExceptionTypes',
+                'Skipped, excluded by configuration.',
                 ''
             );
         }
@@ -243,8 +263,27 @@ class SentryClient
 
     private function shouldExcludeException(\Throwable $throwable): bool
     {
-        $excludedExceptions = array_keys(array_filter($this->excludeExceptionTypes));
-        return in_array(get_class($throwable), $excludedExceptions, true);
+        $excludedExceptionTypes = array_keys(array_filter($this->excludeExceptionTypes));
+        if (in_array(get_class($throwable), $excludedExceptionTypes, true)) {
+            return true;
+        }
+
+        if (in_array($throwable->getCode(), $this->excludeExceptionCodes, true)) {
+            return true;
+        }
+
+        $message = $throwable->getMessage();
+        if (array_reduce(
+            $this->excludeExceptionMessagePatterns,
+            static function(bool $carry, string $pattern) use ($message) {
+                return $carry || preg_match($pattern, $message) === 1;
+            },
+            false
+        )) {
+            return true;
+        }
+
+        return false;
     }
 
     private function configureScope(array $extraData, array $tags): void
