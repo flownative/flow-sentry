@@ -42,9 +42,7 @@ class SentryFileBackend extends FileBackend
                     $this->getBreadcrumbType($severity),
                     basename($this->logFileUrl),
                     $message,
-                    ($additionalData ?? []) + array_filter([
-                        'packageKey' => $packageKey, 'className' => $className, 'methodName' => $methodName
-                    ]),
+                    ($additionalData ?? []) + array_filter(compact('packageKey', 'className', 'methodName')),
                     time()
                 )
             );

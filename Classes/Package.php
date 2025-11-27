@@ -19,7 +19,6 @@ class Package extends BasePackage
                 $configurationManager = $bootstrap->getObjectManager()->get(ConfigurationManager::class);
                 $settings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS, $this->getPackageKey());
                 // instantiate client to set up Sentry and register error handler early
-                /** @noinspection PhpExpressionResultUnusedInspection */
                 new SentryClient($settings ?? []);
             }
         });

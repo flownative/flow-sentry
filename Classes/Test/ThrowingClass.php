@@ -34,6 +34,7 @@ class ThrowingClass
 
     /**
      * @throws SentryClientTestException
+     * @noinspection PhpUnusedParameterInspection
      */
     private function doreallyThrowException(JsonSerializableTestArgument $argument): void
     {

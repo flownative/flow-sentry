@@ -30,7 +30,6 @@ use Neos\Utility\Arrays;
 use Psr\Log\LoggerInterface;
 use Sentry\Event;
 use Sentry\EventHint;
-use Sentry\EventId;
 use Sentry\ExceptionDataBag;
 use Sentry\ExceptionMechanism;
 use Sentry\Frame;
@@ -250,7 +249,7 @@ class SentryClient
         $this->setTags();
         $this->configureScope($extraData, $tags);
         $eventHint = EventHint::fromArray([
-            'stacktrace' => $this->prepareStacktrace()
+            'stacktrace' => $this->prepareStacktrace(null)
         ]);
         $sentryEventId = SentrySdk::getCurrentHub()->captureMessage($message, $severity, $eventHint);
 
@@ -261,7 +260,7 @@ class SentryClient
         );
     }
 
-    private function shouldExcludeException(\Throwable $throwable): bool
+    private function shouldExcludeException(Throwable $throwable): bool
     {
         $excludedExceptionTypes = array_keys(array_filter($this->excludeExceptionTypes));
         if (in_array(get_class($throwable), $excludedExceptionTypes, true)) {
@@ -324,7 +323,7 @@ class SentryClient
         return str_replace(['_', FLOW_PATH_ROOT], '/', $matches[1]);
     }
 
-    private function prepareStacktrace(\Throwable $throwable = null): ?Stacktrace
+    private function prepareStacktrace(?Throwable $throwable): ?Stacktrace
     {
         if ($this->stacktraceBuilder === null) {
             return null;
