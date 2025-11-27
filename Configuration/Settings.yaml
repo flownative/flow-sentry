@@ -4,6 +4,7 @@ Flownative:
     environment: "%env:SENTRY_ENVIRONMENT%"
     release: "%env:SENTRY_RELEASE%"
     sampleRate: 1.0
+    errorLevel: null
     capture:
       excludeExceptionTypes:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true

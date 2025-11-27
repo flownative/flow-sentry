@@ -52,6 +52,7 @@ class SentryClient
     protected string $release;
 
     protected float $sampleRate = 1;
+    protected int $errorLevel;
     protected array $excludeExceptionTypes = [];
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
@@ -106,6 +107,7 @@ class SentryClient
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
+        $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
     }
 
     public function initializeObject(): void
@@ -137,6 +139,7 @@ class SentryClient
                 FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
             ],
             'attach_stacktrace' => true,
+            'error_types' => $this->errorLevel,
             'before_send' => function (Event $event, ?EventHint $hint): ?Event {
                 $hasThrowableAndShouldSkip = $hint?->exception && $this->shouldExcludeException($hint->exception);
                 if ($hasThrowableAndShouldSkip) {
