@@ -23,9 +23,9 @@ use Sentry\Severity;
 
 final class SentryCommandController extends CommandController
 {
-    const TEST_MODE_MESSAGE = 'message';
-    const TEST_MODE_THROW = 'throw';
-    const TEST_MODE_ERROR = 'error';
+    private const TEST_MODE_MESSAGE = 'message';
+    private const TEST_MODE_THROW = 'throw';
+    private const TEST_MODE_ERROR = 'error';
 
     /**
      * @Flow\Inject
@@ -94,6 +94,9 @@ final class SentryCommandController extends CommandController
         $this->outputLine();
     }
 
+    /**
+     * @throws SentryClientTestException
+     */
     private function throwException(): void
     {
         $this->outputLine();

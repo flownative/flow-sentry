@@ -30,7 +30,6 @@ use Neos\Utility\Arrays;
 use Psr\Log\LoggerInterface;
 use Sentry\Event;
 use Sentry\EventHint;
-use Sentry\EventId;
 use Sentry\ExceptionDataBag;
 use Sentry\ExceptionMechanism;
 use Sentry\Frame;
@@ -261,7 +260,7 @@ class SentryClient
         );
     }
 
-    private function shouldExcludeException(\Throwable $throwable): bool
+    private function shouldExcludeException(Throwable $throwable): bool
     {
         $excludedExceptionTypes = array_keys(array_filter($this->excludeExceptionTypes));
         if (in_array(get_class($throwable), $excludedExceptionTypes, true)) {
