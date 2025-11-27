@@ -10,8 +10,11 @@ Flownative:
 Neos:
   Flow:
     log:
-      systemLogger:
-        backend: Flownative\Sentry\Log\SentryFileBackend
+      psr3:
+        Neos\Flow\Log\PsrLoggerFactory:
+          systemLogger:
+            default:
+              class: 'Flownative\Sentry\Log\SentryFileBackend'
       throwables:
         storageClass: 'Flownative\Sentry\Log\SentryStorage'
         optionsByImplementation:

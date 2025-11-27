@@ -88,6 +88,45 @@ data" section in Sentry.
 Note that the array must only contain values of simple types, such as
 strings, booleans or integers.
 
+## Logging integration
+
+### Breadcrumb handler
+
+This package configures a logging backend to add messages as breadcrumbs to
+be sent to Sentry when an exception happens. This provides more information
+on what happened before an exception.
+
+If you want to include the security and query logging into this handling,
+feel free to add this to the Flow settings:
+
+```yaml
+Neos:
+  Flow:
+    log:
+      psr3:
+        Neos\Flow\Log\PsrLoggerFactory:
+          securityLogger:
+            default:
+              class: 'Flownative\Sentry\Log\SentryFileBackend'
+          sqlLogger:
+            default:
+              class: 'Flownative\Sentry\Log\SentryFileBackend'
+```
+
+For more information on breadcrumbs see the Sentry documentation at
+https://docs.sentry.io/platforms/php/enriching-events/breadcrumbs/
+
+### Monolog
+
+In case you want to store all log messages in Sentry, one way is to configure
+Flow to use monolog for logging and then add the `Sentry\Monolog\Handler` to
+the setup.
+
+Keep in mind that the breadcrumb handler provided by this package might be
+disabled when doing this, depending on your configuration. Sentry provides
+a monolog integration for that purpose, see `Sentry\Monolog\BreadcrumbHandler`
+and https://docs.sentry.io/platforms/php/integrations/monolog/. 
+
 ## Testing the Client
 
 This package provides a command controller which allows you to log a
