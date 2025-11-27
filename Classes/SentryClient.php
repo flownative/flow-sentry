@@ -250,7 +250,7 @@ class SentryClient
         $this->setTags();
         $this->configureScope($extraData, $tags);
         $eventHint = EventHint::fromArray([
-            'stacktrace' => $this->prepareStacktrace()
+            'stacktrace' => $this->prepareStacktrace(null)
         ]);
         $sentryEventId = SentrySdk::getCurrentHub()->captureMessage($message, $severity, $eventHint);
 
@@ -324,7 +324,7 @@ class SentryClient
         return str_replace(['_', FLOW_PATH_ROOT], '/', $matches[1]);
     }
 
-    private function prepareStacktrace(\Throwable $throwable = null): ?Stacktrace
+    private function prepareStacktrace(?Throwable $throwable): ?Stacktrace
     {
         if ($this->stacktraceBuilder === null) {
             return null;
