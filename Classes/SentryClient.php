@@ -53,6 +53,8 @@ class SentryClient
 
     protected float $sampleRate = 1;
     protected array $excludeExceptionTypes = [];
+    protected array $excludeExceptionMessagePatterns = [];
+    protected array $excludeExceptionCodes = [];
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -102,6 +104,8 @@ class SentryClient
 
         $this->sampleRate = (float)($settings['sampleRate'] ?? 1);
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
+        $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
+        $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
     }
 
     public function initializeObject(): void
@@ -133,6 +137,14 @@ class SentryClient
                 FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
             ],
             'attach_stacktrace' => true,
+            'before_send' => function (Event $event, ?EventHint $hint): ?Event {
+                $hasThrowableAndShouldSkip = $hint?->exception && $this->shouldExcludeException($hint->exception);
+                if ($hasThrowableAndShouldSkip) {
+                    return null;
+                }
+
+                return $event;
+            }
         ]);
 
         $client = SentrySdk::getCurrentHub()->getClient();
@@ -189,7 +201,7 @@ class SentryClient
         if ($this->shouldExcludeException($throwable)) {
             return new CaptureResult(
                 true,
-                'skipped excluded exception type',
+                'Skipped, excluded by configuration.',
                 ''
             );
         }
@@ -248,8 +260,27 @@ class SentryClient
 
     private function shouldExcludeException(\Throwable $throwable): bool
     {
-        $excludedExceptions = array_keys(array_filter($this->excludeExceptionTypes));
-        return in_array(get_class($throwable), $excludedExceptions, true);
+        $excludedExceptionTypes = array_keys(array_filter($this->excludeExceptionTypes));
+        if (in_array(get_class($throwable), $excludedExceptionTypes, true)) {
+            return true;
+        }
+
+        if (in_array($throwable->getCode(), $this->excludeExceptionCodes, true)) {
+            return true;
+        }
+
+        $message = $throwable->getMessage();
+        if (array_reduce(
+            $this->excludeExceptionMessagePatterns,
+            static function(bool $carry, string $pattern) use ($message) {
+                return $carry || preg_match($pattern, $message) === 1;
+            },
+            false
+        )) {
+            return true;
+        }
+
+        return false;
     }
 
     private function configureScope(array $extraData, array $tags): void

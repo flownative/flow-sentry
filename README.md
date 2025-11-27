@@ -59,7 +59,8 @@ Flownative:
 The default is 1 – 100% percent of all errors are sampled.
 
 Throwables (that includes exceptions and runtime errors) are logged as
-Sentry events. You may specify a list of exceptions which should not be
+Sentry events. You may specify a list of exception types, exception message
+regular expressions or exception codes  which should not be which should not be
 recorded.
 
 ```yaml
@@ -68,6 +69,10 @@ Flownative:
     capture:
       excludeExceptionTypes:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
+      excludeExceptionMessagePatterns:
+          - '/^Warning: fopen\(.*/'
+      excludeExceptionCodes:
+          - 1391972021
 ```
 
 By default all Flow exceptions with a status code of 404 are ignored. In case

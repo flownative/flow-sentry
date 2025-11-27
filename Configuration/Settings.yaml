@@ -11,6 +11,8 @@ Flownative:
         'Neos\Flow\Mvc\Exception\NoSuchActionException': true
         'Neos\Flow\Mvc\Exception\NoSuchControllerException': true
         'Neos\Flow\Property\Exception\TargetNotFoundException': true
+      excludeExceptionMessagePatterns: []
+      excludeExceptionCodes: []
 
 Neos:
   Flow:
