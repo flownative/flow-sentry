@@ -51,6 +51,7 @@ class SentryClient
     protected string $release;
 
     protected float $sampleRate = 1;
+    protected float $tracesSampleRate = 0;
     protected int $errorLevel;
     protected array $excludeExceptionTypes = [];
     protected array $excludeExceptionMessagePatterns = [];
@@ -103,6 +104,7 @@ class SentryClient
         $this->release = $settings['release'] ?: $this->release;
 
         $this->sampleRate = (float)($settings['sampleRate'] ?? 1);
+        $this->tracesSampleRate = (float)($settings['tracesSampleRate'] ?? 0);
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
@@ -129,6 +131,7 @@ class SentryClient
             'environment' => $this->environment,
             'release' => $this->release,
             'sample_rate' => $this->sampleRate,
+            'traces_sample_rate' => $this->tracesSampleRate,
             'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
             'in_app_exclude' => [
                 FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',

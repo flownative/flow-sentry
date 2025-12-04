@@ -58,6 +58,17 @@ Flownative:
 
 The default is 1 – 100% percent of all errors are sampled.
 
+The traces sample rate for performance monitoring can be set using
+
+```yaml
+Flownative:
+  Sentry:
+    tracesSampleRate: 0.25
+```
+
+The default is 0 – performance tracing is disabled. Set a value between 0 and 1
+to enable tracing (e.g. 0.25 for 25% of transactions).
+
 The PHP error level for errors automatically detected by the Sentry SDK can
 be set using:
 
