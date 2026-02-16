@@ -6,6 +6,7 @@ Flownative:
     sampleRate: 1.0
     tracesSampleRate: 0
     errorLevel: null
+    storageLogging: false
     capture:
       excludeExceptionTypes:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true

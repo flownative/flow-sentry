@@ -82,6 +82,16 @@ The default is `null`, that makes Sentry use the value returned by the
 `error_reporting()` function. The available error levels are documented at
 [PHP error constants](https://www.php.net/manual/en/errorfunc.constants.php).
 
+By default, this package also keeps Flow's exception dump files in
+`Data/Logs/Exceptions/*.txt` (so the Neos/Flow message "For a full stacktrace, open …"
+still works). You can disable writing those dump files with:
+
+```yaml
+Flownative:
+  Sentry:
+    storageLogging: false
+```
+
 **Beware:** a low error log level can lead to your application not loading
 anymore and your Sentry account being flooded with error messages.
 
