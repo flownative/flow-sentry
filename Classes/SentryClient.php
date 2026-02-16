@@ -132,7 +132,7 @@ class SentryClient
             'release' => $this->release,
             'sample_rate' => $this->sampleRate,
             'traces_sample_rate' => $this->tracesSampleRate,
-            'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
+            'ignore_exceptions' => array_map('strval', array_keys(array_filter($this->excludeExceptionTypes))),
             'in_app_exclude' => [
                 FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
                 FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
