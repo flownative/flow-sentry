@@ -15,6 +15,7 @@ Flownative:
         'Neos\Flow\Property\Exception\TargetNotFoundException': true
       excludeExceptionMessagePatterns: []
       excludeExceptionCodes: []
+      excludeExceptionFilePathPrefixesByErrorLevel: []
 
 Neos:
   Flow:

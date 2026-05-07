@@ -56,6 +56,7 @@ class SentryClient
     protected array $excludeExceptionTypes = [];
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
+    protected array $excludeExceptionFilePathPrefixesByErrorLevel = [];
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -108,6 +109,7 @@ class SentryClient
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
+        $this->excludeExceptionFilePathPrefixesByErrorLevel = $settings['capture']['excludeExceptionFilePathPrefixesByErrorLevel'] ?? [];
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
     }
 
@@ -274,6 +276,10 @@ class SentryClient
             return true;
         }
 
+        if ($this->isExcludedByErrorLevelAndFilePath($throwable)) {
+            return true;
+        }
+
         $message = $throwable->getMessage();
         if (array_reduce(
             $this->excludeExceptionMessagePatterns,
@@ -283,6 +289,26 @@ class SentryClient
             false
         )) {
             return true;
+        }
+
+        return false;
+    }
+
+    private function isExcludedByErrorLevelAndFilePath(Throwable $throwable): bool
+    {
+        $severity = E_ERROR;
+        if ($throwable instanceof \ErrorException) {
+            $severity = $throwable->getSeverity();
+        }
+        if (!isset($this->excludeExceptionFilePathPrefixesByErrorLevel[$severity])) {
+            return false;
+        }
+
+        $filePath = $throwable->getFile();
+        foreach ((array)$this->excludeExceptionFilePathPrefixesByErrorLevel[$severity] as $pathPrefix) {
+            if ($pathPrefix !== '' && str_starts_with($filePath, FLOW_PATH_ROOT . $pathPrefix)) {
+                return true;
+            }
         }
 
         return false;
