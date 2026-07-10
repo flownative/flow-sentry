@@ -85,10 +85,12 @@ The default is `null`, that makes Sentry use the value returned by the
 **Beware:** a low error log level can lead to your application not loading
 anymore and your Sentry account being flooded with error messages.
 
-Throwables (that includes exceptions and runtime errors) are logged as
-Sentry events. You may specify a list of exception types, exception message
-regular expressions or exception codes  which should not be which should not be
-recorded.
+Throwables (that include exceptions and runtime errors) are logged as Sentry events.
+You may configure some exclusions that should not be recorded:
+- Exception types
+- Exception message regular expressions
+- Exception codes
+- Exception file path prefixes (relative to the `FLOW_PATH_ROOT`) by error level
 
 ```yaml
 Flownative:
@@ -100,6 +102,9 @@ Flownative:
           - '/^Warning: fopen\(.*/'
       excludeExceptionCodes:
           - 1391972021
+      excludeExceptionFilePathPrefixesByErrorLevel:
+        'E_WARNING | E_DEPRECATED | E_USER_DEPRECATED':
+          - 'Packages/Libraries/'
 ```
 
 By default all Flow exceptions with a status code of 404 are ignored. In case

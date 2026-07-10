@@ -56,6 +56,7 @@ class SentryClient
     protected array $excludeExceptionTypes = [];
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
+    protected array $excludeExceptionFilePathPrefixesByErrorLevel = [];
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -109,6 +110,11 @@ class SentryClient
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
+
+        foreach ($settings['capture']['excludeExceptionFilePathPrefixesByErrorLevel'] ?? [] as $levelMask => $pathPrefixes) {
+            $mask = $this->resolveErrorLevelMask($levelMask);
+            $this->excludeExceptionFilePathPrefixesByErrorLevel[$mask] = $pathPrefixes;
+        }
     }
 
     public function initializeObject(): void
@@ -274,6 +280,10 @@ class SentryClient
             return true;
         }
 
+        if ($this->isExcludedByErrorLevelAndFilePath($throwable)) {
+            return true;
+        }
+
         $message = $throwable->getMessage();
         if (array_reduce(
             $this->excludeExceptionMessagePatterns,
@@ -286,6 +296,43 @@ class SentryClient
         }
 
         return false;
+    }
+
+    private function isExcludedByErrorLevelAndFilePath(Throwable $throwable): bool
+    {
+        $severity = E_ERROR;
+        if ($throwable instanceof \ErrorException) {
+            $severity = $throwable->getSeverity();
+        }
+        if (!isset($this->excludeExceptionFilePathPrefixesByErrorLevel[$severity])) {
+            return false;
+        }
+
+        $filePath = $throwable->getFile();
+        foreach ($this->excludeExceptionFilePathPrefixesByErrorLevel as $errorLevelMask => $pathPrefixes) {
+            if (($severity & $errorLevelMask) === 0) {
+                continue;
+            }
+            foreach ((array)$pathPrefixes as $pathPrefix) {
+                if ($pathPrefix !== '' && str_starts_with($filePath, FLOW_PATH_ROOT . $pathPrefix)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function resolveErrorLevelMask(string $config): int
+    {
+        $mask = 0;
+        foreach (explode('|', $config) as $constantName) {
+            $constantName = trim($constantName);
+            if (defined($constantName)) {
+                $mask |= constant($constantName);
+            }
+        }
+        return $mask;
     }
 
     private function configureScope(array $extraData, array $tags): void
