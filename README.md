@@ -103,8 +103,8 @@ Flownative:
       excludeExceptionCodes:
           - 1391972021
       excludeExceptionFilePathPrefixesByErrorLevel:
-        '%E_WARNING%':
-          - '/Packages/Libraries/'
+        'E_WARNING | E_DEPRECATED | E_USER_DEPRECATED':
+          - 'Packages/Libraries/'
 ```
 
 By default all Flow exceptions with a status code of 404 are ignored. In case

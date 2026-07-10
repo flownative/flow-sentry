@@ -109,8 +109,12 @@ class SentryClient
         $this->excludeExceptionTypes = $settings['capture']['excludeExceptionTypes'] ?? [];
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
-        $this->excludeExceptionFilePathPrefixesByErrorLevel = $settings['capture']['excludeExceptionFilePathPrefixesByErrorLevel'] ?? [];
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
+
+        foreach ($settings['capture']['excludeExceptionFilePathPrefixesByErrorLevel'] ?? [] as $levelMask => $pathPrefixes) {
+            $mask = $this->resolveErrorLevelMask($levelMask);
+            $this->excludeExceptionFilePathPrefixesByErrorLevel[$mask] = $pathPrefixes;
+        }
     }
 
     public function initializeObject(): void
@@ -305,13 +309,30 @@ class SentryClient
         }
 
         $filePath = $throwable->getFile();
-        foreach ((array)$this->excludeExceptionFilePathPrefixesByErrorLevel[$severity] as $pathPrefix) {
-            if ($pathPrefix !== '' && str_starts_with($filePath, FLOW_PATH_ROOT . $pathPrefix)) {
-                return true;
+        foreach ($this->excludeExceptionFilePathPrefixesByErrorLevel as $errorLevelMask => $pathPrefixes) {
+            if (($severity & $errorLevelMask) === 0) {
+                continue;
+            }
+            foreach ((array)$pathPrefixes as $pathPrefix) {
+                if ($pathPrefix !== '' && str_starts_with($filePath, FLOW_PATH_ROOT . $pathPrefix)) {
+                    return true;
+                }
             }
         }
 
         return false;
+    }
+
+    private function resolveErrorLevelMask(string $config): int
+    {
+        $mask = 0;
+        foreach (explode('|', $config) as $constantName) {
+            $constantName = trim($constantName);
+            if (defined($constantName)) {
+                $mask |= constant($constantName);
+            }
+        }
+        return $mask;
     }
 
     private function configureScope(array $extraData, array $tags): void
