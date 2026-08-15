@@ -16,6 +16,7 @@ namespace Flownative\Sentry;
 use Flownative\Sentry\Context\UserContext;
 use Flownative\Sentry\Context\UserContextServiceInterface;
 use Flownative\Sentry\Context\WithExtraDataInterface;
+use Flownative\Sentry\Exception\InvalidConfigurationException;
 use Flownative\Sentry\Log\CaptureResult;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
@@ -46,6 +47,22 @@ use Throwable;
  */
 class SentryClient
 {
+    /**
+     * SDK options which must not be set via the sdkOptions passthrough, either
+     * because the package composes them itself or because they cannot be
+     * expressed in YAML.
+     */
+    private const RESERVED_SDK_OPTIONS = [
+        'before_send',
+        'before_send_transaction',
+        'before_send_check_in',
+        'before_send_log',
+        'before_send_metrics',
+        'ignore_exceptions',
+        'integrations',
+        'default_integrations',
+    ];
+
     protected string $dsn;
     protected string $environment;
     protected string $release;
@@ -56,6 +73,7 @@ class SentryClient
     protected array $excludeExceptionTypes = [];
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
+    protected array $sdkOptions = [];
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -109,6 +127,33 @@ class SentryClient
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
+        $this->sdkOptions = $this->validateSdkOptions($settings['sdkOptions'] ?? []);
+    }
+
+    /**
+     * @throws InvalidConfigurationException
+     */
+    private function validateSdkOptions(mixed $sdkOptions): array
+    {
+        if (!is_array($sdkOptions)) {
+            throw new InvalidConfigurationException(
+                'Flownative.Sentry.sdkOptions must be an array of Sentry SDK options',
+                1755264001
+            );
+        }
+        foreach (self::RESERVED_SDK_OPTIONS as $reservedOption) {
+            if (array_key_exists($reservedOption, $sdkOptions)) {
+                throw new InvalidConfigurationException(
+                    sprintf(
+                        'The Sentry SDK option "%s" cannot be set via Flownative.Sentry.sdkOptions.%s because it is managed by this package',
+                        $reservedOption,
+                        $reservedOption
+                    ),
+                    1755264002
+                );
+            }
+        }
+        return $sdkOptions;
     }
 
     public function initializeObject(): void
@@ -126,20 +171,26 @@ class SentryClient
             $representationSerializer
         );
 
-        \Sentry\init([
+        $inAppExclude = [
+            FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
+            FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
+        ];
+        if (isset($this->sdkOptions['in_app_exclude'])) {
+            $inAppExclude = array_values(array_unique(array_merge($inAppExclude, (array)$this->sdkOptions['in_app_exclude'])));
+        }
+
+        // Options set explicitly by this package always win over sdkOptions
+        \Sentry\init(array_replace($this->sdkOptions, [
             'dsn' => $this->dsn,
             'environment' => $this->environment,
             'release' => $this->release,
             'sample_rate' => $this->sampleRate,
             'traces_sample_rate' => $this->tracesSampleRate,
             'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
-            'in_app_exclude' => [
-                FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
-                FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
-            ],
+            'in_app_exclude' => $inAppExclude,
             'attach_stacktrace' => true,
             'error_types' => $this->errorLevel,
             'before_send' => function (Event $event, ?EventHint $hint): ?Event {
@@ -150,7 +201,7 @@ class SentryClient
 
                 return $event;
             }
-        ]);
+        ]));
 
         $client = SentrySdk::getCurrentHub()->getClient();
         if (!$client) {
