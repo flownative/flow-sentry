@@ -1,0 +1,45 @@
+type: dictionary
+additionalProperties: true
+properties:
+  dsn: { type: ['string', 'null'] }
+  environment: { type: ['string', 'null'] }
+  release: { type: ['string', 'null'] }
+  sampleRate: { type: ['number', 'integer'] }
+  tracesSampleRate: { type: ['number', 'integer'] }
+  errorLevel: { type: ['integer', 'null'] }
+
+  sdkOptions:
+    type: dictionary
+    additionalProperties: true
+
+  scrubbers:
+    type: dictionary
+    additionalProperties:
+      type: ['dictionary', 'null']
+      properties:
+        className: { type: string, format: class-name }
+        position: { type: ['string', 'integer'] }
+        options:
+          type: dictionary
+          additionalProperties: true
+
+  attachSessionTag: { type: boolean }
+  attachProcessInfo: { type: boolean }
+  captureStacktraceVariables: { type: boolean }
+  captureUncaughtExceptions: { type: boolean }
+  capturePhpErrors: { type: boolean }
+  userContext:
+    type: string
+    enum: ['service', 'username', 'sha1', 'none']
+
+  capture:
+    type: dictionary
+    properties:
+      excludeExceptionTypes:
+        type: dictionary
+        additionalProperties: { type: boolean }
+      excludeExceptionMessagePatterns:
+        type: array
+        items: { type: string }
+      excludeExceptionCodes:
+        type: array
