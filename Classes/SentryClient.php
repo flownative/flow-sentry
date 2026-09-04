@@ -130,6 +130,59 @@ class SentryClient
         $this->sdkOptions = $this->validateSdkOptions($settings['sdkOptions'] ?? []);
     }
 
+    public function initializeObject(): void
+    {
+        if (empty($this->dsn)) {
+            return;
+        }
+
+        $representationSerializer = new RepresentationSerializer(
+            new Options([])
+        );
+        $representationSerializer->setSerializeAllObjects(true);
+        $this->stacktraceBuilder = new StacktraceBuilder(
+            new Options([]),
+            $representationSerializer
+        );
+
+        $inAppExclude = [
+            FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
+            FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
+        ];
+        if (isset($this->sdkOptions['in_app_exclude'])) {
+            $inAppExclude = array_unique(array_merge($inAppExclude, (array)$this->sdkOptions['in_app_exclude']));
+        }
+
+        \Sentry\init([
+            'dsn' => $this->dsn,
+            'environment' => $this->environment,
+            'release' => $this->release,
+            'sample_rate' => $this->sampleRate,
+            'traces_sample_rate' => $this->tracesSampleRate,
+            'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
+            'in_app_exclude' => $inAppExclude,
+            'attach_stacktrace' => true,
+            'error_types' => $this->errorLevel,
+            'before_send' => function (Event $event, ?EventHint $hint): ?Event {
+                $hasThrowableAndShouldSkip = $hint?->exception && $this->shouldExcludeException($hint->exception);
+                if ($hasThrowableAndShouldSkip) {
+                    return null;
+                }
+
+                return $event;
+            }
+        ] + $this->sdkOptions);
+
+        $client = SentrySdk::getCurrentHub()->getClient();
+        if (!$client) {
+            return;
+        }
+        $this->setTags();
+    }
+
     /**
      * @throws InvalidConfigurationException
      */
@@ -154,60 +207,6 @@ class SentryClient
             }
         }
         return $sdkOptions;
-    }
-
-    public function initializeObject(): void
-    {
-        if (empty($this->dsn)) {
-            return;
-        }
-
-        $representationSerializer = new RepresentationSerializer(
-            new Options([])
-        );
-        $representationSerializer->setSerializeAllObjects(true);
-        $this->stacktraceBuilder = new StacktraceBuilder(
-            new Options([]),
-            $representationSerializer
-        );
-
-        $inAppExclude = [
-            FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
-            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
-            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
-            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
-            FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
-        ];
-        if (isset($this->sdkOptions['in_app_exclude'])) {
-            $inAppExclude = array_values(array_unique(array_merge($inAppExclude, (array)$this->sdkOptions['in_app_exclude'])));
-        }
-
-        // Options set explicitly by this package always win over sdkOptions
-        \Sentry\init(array_replace($this->sdkOptions, [
-            'dsn' => $this->dsn,
-            'environment' => $this->environment,
-            'release' => $this->release,
-            'sample_rate' => $this->sampleRate,
-            'traces_sample_rate' => $this->tracesSampleRate,
-            'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
-            'in_app_exclude' => $inAppExclude,
-            'attach_stacktrace' => true,
-            'error_types' => $this->errorLevel,
-            'before_send' => function (Event $event, ?EventHint $hint): ?Event {
-                $hasThrowableAndShouldSkip = $hint?->exception && $this->shouldExcludeException($hint->exception);
-                if ($hasThrowableAndShouldSkip) {
-                    return null;
-                }
-
-                return $event;
-            }
-        ]));
-
-        $client = SentrySdk::getCurrentHub()->getClient();
-        if (!$client) {
-            return;
-        }
-        $this->setTags();
     }
 
     private function setTags(): void
