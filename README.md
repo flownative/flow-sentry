@@ -210,3 +210,111 @@ There are two more test modes for message capturing and error handling:
 
 - `./flow sentry:test --mode message`
 - `./flow sentry:test --mode error`
+
+## Additional SDK options
+
+Any YAML-representable Sentry SDK client option can be passed through to
+`\Sentry\init()` via `sdkOptions`:
+
+```yaml
+Flownative:
+  Sentry:
+    sdkOptions:
+      max_request_body_size: 'never'
+      send_default_pii: false
+```
+
+Options this package sets explicitly (`dsn`, `environment`, `release`, the
+sample rates, `error_types` and the exception excludes) always take
+precedence. The `before_send*` callbacks, `ignore_exceptions` and
+`integrations` are managed by the package and rejected with an exception at
+boot. `in_app_exclude` entries are merged with the package defaults. Which
+options exist depends on the installed `sentry/sentry` version.
+
+## Event scrubbing
+
+Scrubbers remove or redact data from events before they are sent. They run
+for error events, transactions and check-ins, after the configured exception
+excludes. Registration is explicit, keyed by a stable identifier:
+
+```yaml
+Flownative:
+  Sentry:
+    scrubbers:
+      'Acme.Request':
+        className: 'Flownative\Sentry\Scrubbing\RequestScrubber'
+        position: 100
+        options:
+          queryParamAllowlist: ['search']
+      'Acme.Patterns':
+        className: 'Flownative\Sentry\Scrubbing\ValuePatternScrubber'
+        position: 200
+        options:
+          patterns: ['url-credentials', 'email', 'ipv4', 'ipv6']
+```
+
+`position` supports numeric values, `'start'`, `'end'`, `'before <id>'` and
+`'after <id>'` (Flow's `PositionalArraySorter`). Entries without a position
+run between `start` and `end` — give privacy scrubbers explicit numeric
+positions so their order is deterministic. An inherited entry can be
+disabled with `'Acme.Request': ~`.
+
+A scrubber implements `Flownative\Sentry\Scrubbing\EventScrubberInterface`
+and is constructed with its `options` array. Returning `null` discards the
+event. If a scrubber throws, the event is discarded and a synthetic
+replacement event (containing only the scrubber identifier, exception class
+names, the integer exception code and the discarded event ID) is sent
+instead, so scrubbing failures stay visible in Sentry.
+
+Bundled scrubbers:
+
+- `RequestScrubber` — reduces the request interface to method, URL, query
+  string and headers; the query string is filtered against
+  `queryParamAllowlist`, headers against `headerAllowlist` (keep-only),
+  body, cookies and env are always dropped. Also filters breadcrumb URLs.
+- `ValuePatternScrubber` — redacts built-in patterns (`url-credentials`,
+  `email`, `ipv4`, `ipv6`, `iban`, `phone`) from messages, exception
+  values, breadcrumbs, extras, contexts, tags, fingerprints and the request
+  interface, redacts sensitive keys entirely and replaces objects without
+  serializing their content. The user interface is not touched.
+- `FrameVarsScrubber` — removes captured function arguments, absolute file
+  paths and source context from stack trace frames.
+- `SpanDataScrubber` — drops span data and removes URL query strings from
+  transaction names, span descriptions and span tags.
+
+## Data minimization options
+
+```yaml
+Flownative:
+  Sentry:
+    attachSessionTag: false        # no flow_session_sha1 tag (default: true)
+    attachProcessInfo: false       # no PID/UID/GID/inode/user extras (default: true)
+    captureStacktraceVariables: false  # no function arguments in stack traces (default: true)
+    userContext: 'username'        # 'service' (default), 'username', 'sha1' or 'none'
+```
+
+All defaults preserve the previous behavior of this package.
+
+## Duplicate event prevention
+
+Two capture pipelines exist in a Flow application: the SDK's own listeners
+(registered by `\Sentry\init()`) and Flow's exception handling, which routes
+throwables into this package via the ThrowableStorage. Without precautions
+one incident can produce two events.
+
+- `captureUncaughtExceptions: false` removes the SDK's uncaught-exception
+  listener; uncaught throwables are captured once, through Flow, with full
+  context. Exceptions whose renderingGroup sets `logException: false`
+  (404/410 by default) are then not captured at all.
+- `capturePhpErrors: false` removes the SDK's PHP error listener; errors
+  Flow escalates (`exceptionalErrors`) are captured once, as exceptions.
+  Warnings/notices then produce no standalone events, and `errorLevel` only
+  selects which fatal error types the shutdown handler captures.
+- A per-process capture ledger (WeakMap over the throwable and its whole
+  `getPrevious()` chain, marked only after an accepted capture)
+  deduplicates log-then-rethrow patterns — e.g. Flow's Doctrine `Query`
+  logs the driver exception and rethrows a wrapper; only one event is sent.
+
+Both toggles default to `true` (previous behavior). `default_integrations`
+and `integrations` are managed by the package and rejected in `sdkOptions`;
+`capture_silenced_errors` has no effect while the error listener is removed.

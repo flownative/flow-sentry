@@ -16,7 +16,9 @@ namespace Flownative\Sentry;
 use Flownative\Sentry\Context\UserContext;
 use Flownative\Sentry\Context\UserContextServiceInterface;
 use Flownative\Sentry\Context\WithExtraDataInterface;
+use Flownative\Sentry\Exception\InvalidConfigurationException;
 use Flownative\Sentry\Log\CaptureResult;
+use Flownative\Sentry\Scrubbing\ScrubberChainFactory;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
@@ -46,6 +48,22 @@ use Throwable;
  */
 class SentryClient
 {
+    /**
+     * SDK options which must not be set via the sdkOptions passthrough, either
+     * because the package composes them itself or because they cannot be
+     * expressed in YAML.
+     */
+    private const RESERVED_SDK_OPTIONS = [
+        'before_send',
+        'before_send_transaction',
+        'before_send_check_in',
+        'before_send_log',
+        'before_send_metrics',
+        'ignore_exceptions',
+        'integrations',
+        'default_integrations',
+    ];
+
     protected string $dsn;
     protected string $environment;
     protected string $release;
@@ -56,6 +74,14 @@ class SentryClient
     protected array $excludeExceptionTypes = [];
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
+    protected array $sdkOptions = [];
+    protected ?ScrubberChainFactory $scrubberChainFactory = null;
+    protected bool $attachSessionTag = true;
+    protected bool $attachProcessInfo = true;
+    protected bool $captureStacktraceVariables = true;
+    protected bool $captureUncaughtExceptions = true;
+    protected bool $capturePhpErrors = true;
+    protected string $userContextMode = 'service';
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -109,6 +135,46 @@ class SentryClient
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
+        $this->sdkOptions = $this->validateSdkOptions($settings['sdkOptions'] ?? []);
+        $this->scrubberChainFactory = new ScrubberChainFactory($settings['scrubbers'] ?? []);
+        $this->attachSessionTag = (bool)($settings['attachSessionTag'] ?? true);
+        $this->attachProcessInfo = (bool)($settings['attachProcessInfo'] ?? true);
+        $this->captureStacktraceVariables = (bool)($settings['captureStacktraceVariables'] ?? true);
+        $this->captureUncaughtExceptions = (bool)($settings['captureUncaughtExceptions'] ?? true);
+        $this->capturePhpErrors = (bool)($settings['capturePhpErrors'] ?? true);
+        $this->userContextMode = $settings['userContext'] ?? 'service';
+        if (!in_array($this->userContextMode, ['service', 'username', 'sha1', 'none'], true)) {
+            throw new InvalidConfigurationException(
+                sprintf('Flownative.Sentry.userContext must be one of "service", "username", "sha1" or "none", got "%s"', $this->userContextMode),
+                1755264003
+            );
+        }
+    }
+
+    /**
+     * @throws InvalidConfigurationException
+     */
+    private function validateSdkOptions(mixed $sdkOptions): array
+    {
+        if (!is_array($sdkOptions)) {
+            throw new InvalidConfigurationException(
+                'Flownative.Sentry.sdkOptions must be an array of Sentry SDK options',
+                1755264001
+            );
+        }
+        foreach (self::RESERVED_SDK_OPTIONS as $reservedOption) {
+            if (array_key_exists($reservedOption, $sdkOptions)) {
+                throw new InvalidConfigurationException(
+                    sprintf(
+                        'The Sentry SDK option "%s" cannot be set via Flownative.Sentry.sdkOptions.%s because it is managed by this package',
+                        $reservedOption,
+                        $reservedOption
+                    ),
+                    1755264002
+                );
+            }
+        }
+        return $sdkOptions;
     }
 
     public function initializeObject(): void
@@ -120,37 +186,82 @@ class SentryClient
         $representationSerializer = new RepresentationSerializer(
             new Options([])
         );
-        $representationSerializer->setSerializeAllObjects(true);
+        if ($this->captureStacktraceVariables) {
+            $representationSerializer->setSerializeAllObjects(true);
+        }
         $this->stacktraceBuilder = new StacktraceBuilder(
             new Options([]),
             $representationSerializer
         );
 
-        \Sentry\init([
+        $scrubberChainFactory = $this->scrubberChainFactory;
+        $scrub = static function (Event $event, ?EventHint $hint) use ($scrubberChainFactory): ?Event {
+            if ($scrubberChainFactory === null) {
+                return $event;
+            }
+            return $scrubberChainFactory->getChain()->process($event, $hint);
+        };
+        $captureLedger = new CaptureLedger();
+
+        $excludedIntegrationClassNames = [];
+        if (!$this->captureUncaughtExceptions) {
+            // Flow's global exception handler routes uncaught throwables into
+            // the ThrowableStorage; the SDK listener would capture them first
+            // and produce a second, context-poor event.
+            $excludedIntegrationClassNames[] = \Sentry\Integration\ExceptionListenerIntegration::class;
+        }
+        if (!$this->capturePhpErrors) {
+            // Errors Flow escalates (exceptionalErrors) arrive as exceptions;
+            // with the listener removed, errorLevel only selects which fatal
+            // error types the fatal listener captures.
+            $excludedIntegrationClassNames[] = \Sentry\Integration\ErrorListenerIntegration::class;
+        }
+        $integrationOptions = $excludedIntegrationClassNames !== []
+            ? ['integrations' => IntegrationFilter::excluding($excludedIntegrationClassNames)]
+            : [];
+
+        $inAppExclude = [
+            FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
+            FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
+        ];
+        if (isset($this->sdkOptions['in_app_exclude'])) {
+            $inAppExclude = array_values(array_unique(array_merge($inAppExclude, (array)$this->sdkOptions['in_app_exclude'])));
+        }
+
+        // Options set explicitly by this package always win over sdkOptions
+        \Sentry\init(array_replace($this->sdkOptions, $integrationOptions, [
             'dsn' => $this->dsn,
             'environment' => $this->environment,
             'release' => $this->release,
             'sample_rate' => $this->sampleRate,
             'traces_sample_rate' => $this->tracesSampleRate,
             'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
-            'in_app_exclude' => [
-                FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
-                FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
-            ],
+            'in_app_exclude' => $inAppExclude,
             'attach_stacktrace' => true,
             'error_types' => $this->errorLevel,
-            'before_send' => function (Event $event, ?EventHint $hint): ?Event {
-                $hasThrowableAndShouldSkip = $hint?->exception && $this->shouldExcludeException($hint->exception);
-                if ($hasThrowableAndShouldSkip) {
-                    return null;
+            'before_send' => function (Event $event, ?EventHint $hint) use ($scrub, $captureLedger): ?Event {
+                if ($hint?->exception) {
+                    if ($this->shouldExcludeException($hint->exception)) {
+                        return null;
+                    }
+                    if ($captureLedger->hasBeenCaptured($hint->exception)) {
+                        // log-then-rethrow: the incident is already in Sentry
+                        return null;
+                    }
                 }
 
+                $event = $scrub($event, $hint);
+                if ($event !== null && $hint?->exception) {
+                    $captureLedger->remember($hint->exception);
+                }
                 return $event;
-            }
-        ]);
+            },
+            'before_send_transaction' => $scrub,
+            'before_send_check_in' => $scrub
+        ]));
 
         $client = SentrySdk::getCurrentHub()->getClient();
         if (!$client) {
@@ -160,6 +271,20 @@ class SentryClient
     }
 
     private function setTags(): void
+    {
+        $flowVersion = $this->determineFlowVersion();
+        $sessionTag = $this->attachSessionTag ? $this->determineSessionTag() : null;
+
+        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion, $sessionTag): void {
+            $scope->setTag('flow_version', $flowVersion);
+            $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
+            if ($sessionTag !== null) {
+                $scope->setTag('flow_session_sha1', $sessionTag);
+            }
+        });
+    }
+
+    private function determineFlowVersion(): string
     {
         $flowVersion = '';
         if ($this->packageManager) {
@@ -172,17 +297,16 @@ class SentryClient
         if (empty($flowVersion)) {
             $flowVersion = FLOW_VERSION_BRANCH;
         }
+        return $flowVersion;
+    }
 
+    private function determineSessionTag(): ?string
+    {
         $currentSession = $this->sessionManager?->getCurrentSession();
-
-        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion, $currentSession): void {
-            $scope->setTag('flow_version', $flowVersion);
-            $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
-
-            if ($currentSession instanceof Session && $currentSession->isStarted()) {
-                $scope->setTag('flow_session_sha1', sha1($currentSession->getId()));
-            }
-        });
+        if ($currentSession instanceof Session && $currentSession->isStarted()) {
+            return sha1($currentSession->getId());
+        }
+        return null;
     }
 
     public function getOptions(): Options
@@ -218,19 +342,27 @@ class SentryClient
             $extraData = Arrays::arrayMergeRecursiveOverrule($extraData, $throwable->getExtraData());
         }
 
-        $extraData['PHP Process Inode'] = getmyinode();
-        $extraData['PHP Process PID'] = getmypid();
-        $extraData['PHP Process UID'] = getmyuid();
-        $extraData['PHP Process GID'] = getmygid();
-        $extraData['PHP Process User'] = get_current_user();
+        if ($this->attachProcessInfo) {
+            $extraData['PHP Process Inode'] = getmyinode();
+            $extraData['PHP Process PID'] = getmypid();
+            $extraData['PHP Process UID'] = getmyuid();
+            $extraData['PHP Process GID'] = getmygid();
+            $extraData['PHP Process User'] = get_current_user();
+        }
 
         $tags['exception_code'] = (string)$throwable->getCode();
 
-        $this->setTags();
-        $this->configureScope($extraData, $tags);
         $event = Event::createEvent();
         $this->addThrowableToEvent($throwable, $event);
-        $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
+        // The hint carries the throwable to before_send, where the capture
+        // ledger deduplicates log-then-rethrow patterns across all paths
+        $eventHint = EventHint::fromArray(['exception' => $throwable]);
+
+        $sentryEventId = null;
+        SentrySdk::getCurrentHub()->withScope(function (Scope $scope) use ($event, $eventHint, $extraData, $tags, &$sentryEventId): void {
+            $this->applyCaptureScope($scope, $extraData, $tags);
+            $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event, $eventHint);
+        });
 
         return new CaptureResult(
             true,
@@ -249,12 +381,15 @@ class SentryClient
             );
         }
 
-        $this->setTags();
-        $this->configureScope($extraData, $tags);
         $eventHint = EventHint::fromArray([
             'stacktrace' => $this->prepareStacktrace(null)
         ]);
-        $sentryEventId = SentrySdk::getCurrentHub()->captureMessage($message, $severity, $eventHint);
+
+        $sentryEventId = null;
+        SentrySdk::getCurrentHub()->withScope(function (Scope $scope) use ($message, $severity, $eventHint, $extraData, $tags, &$sentryEventId): void {
+            $this->applyCaptureScope($scope, $extraData, $tags);
+            $sentryEventId = SentrySdk::getCurrentHub()->captureMessage($message, $severity, $eventHint);
+        });
 
         return new CaptureResult(
             true,
@@ -288,8 +423,38 @@ class SentryClient
         return false;
     }
 
-    private function configureScope(array $extraData, array $tags): void
+    /**
+     * Applies per-event data to a capture-local scope. Called inside withScope()
+     * so that nothing of this leaks into subsequent events of the same process
+     * (long-running CLI workers would otherwise accumulate stale data).
+     */
+    private function applyCaptureScope(Scope $scope, array $extraData, array $tags): void
     {
+        foreach ($extraData as $extraDataKey => $extraDataValue) {
+            $scope->setExtra($extraDataKey, $extraDataValue);
+        }
+        foreach ($tags as $tagKey => $tagValue) {
+            $scope->setTag($tagKey, $tagValue);
+        }
+
+        // Re-applied per capture as v3.2.0 did, so the tags survive foreign
+        // code replacing or clearing the hub scope after initialization
+        $scope->setTag('flow_version', $this->determineFlowVersion());
+        $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
+
+        if ($this->attachSessionTag) {
+            $sessionTag = $this->determineSessionTag();
+            if ($sessionTag !== null) {
+                $scope->setTag('flow_session_sha1', $sessionTag);
+            }
+        }
+
+        if ($this->userContextMode === 'none') {
+            // Also removes a user that foreign code put on the inherited scope
+            $scope->removeUser();
+            return;
+        }
+
         $securityContext = Bootstrap::$staticObjectManager->get(SecurityContext::class);
         if ($securityContext instanceof SecurityContext && $securityContext->isInitialized()) {
             $userContext = $this->userContextService->getUserContext($securityContext);
@@ -297,15 +462,18 @@ class SentryClient
             $userContext = new UserContext();
         }
 
-        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($userContext, $extraData, $tags): void {
-            foreach ($extraData as $extraDataKey => $extraDataValue) {
-                $scope->setExtra($extraDataKey, $extraDataValue);
-            }
-            foreach ($tags as $tagKey => $tagValue) {
-                $scope->setTag($tagKey, $tagValue);
-            }
-            $scope->setUser($userContext->toArray());
-        });
+        switch ($this->userContextMode) {
+            case 'username':
+                $scope->setUser(['username' => (string)($userContext->getUsername() ?? '')]);
+                break;
+            case 'sha1':
+                $username = (string)($userContext->getUsername() ?? '');
+                $scope->setUser(['username' => $username !== '' ? sha1($username) : '']);
+                break;
+            case 'service':
+            default:
+                $scope->setUser($userContext->toArray());
+        }
     }
 
     private function renderCleanPathAndFilename(string $rawPathAndFilename): string
@@ -336,7 +504,7 @@ class SentryClient
             $stacktrace = $this->stacktraceBuilder->buildFromException($throwable);
         } else {
             $stacktrace = $this->stacktraceBuilder->buildFromBacktrace(
-                debug_backtrace(0),
+                debug_backtrace($this->captureStacktraceVariables ? 0 : DEBUG_BACKTRACE_IGNORE_ARGS),
                 __FILE__,
                 __LINE__ - 3
             );
@@ -351,7 +519,7 @@ class SentryClient
                 $frame->getLine(),
                 $frame->getRawFunctionName(),
                 $frame->getAbsoluteFilePath(),
-                $frame->getVars(),
+                $this->captureStacktraceVariables ? $frame->getVars() : [],
                 !str_contains($classPathAndFilename, 'Packages/Framework/')
             );
         }

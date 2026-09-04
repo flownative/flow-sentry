@@ -6,6 +6,57 @@ Flownative:
     sampleRate: 1.0
     tracesSampleRate: 0
     errorLevel: null
+
+    # Additional Sentry SDK client options passed to \Sentry\init(). Options set
+    # explicitly by this package (dsn, environment, release, sample rates, error
+    # level, exception excludes) always take precedence. The before_send*
+    # callbacks, ignore_exceptions and integrations cannot be set here.
+    # in_app_exclude entries are merged with the package defaults.
+    sdkOptions: {}
+
+    # Event scrubbers, run for error events, transactions and check-ins after
+    # the capture excludes. Keys are stable registry identifiers; entries take
+    # className, an optional position ('start', 'end', numeric, 'before <id>',
+    # 'after <id>') and an optional options array passed to the scrubber's
+    # constructor. Disable an inherited entry by setting it to null (~).
+    # Bundled scrubbers: RequestScrubber, ValuePatternScrubber,
+    # FrameVarsScrubber, SpanDataScrubber (Flownative\Sentry\Scrubbing).
+    scrubbers: {}
+
+    # Attach a sha1 hash of the session ID as flow_session_sha1 tag. The hash
+    # is a stable pseudonymous identifier — disable for data minimization.
+    attachSessionTag: true
+
+    # Attach PHP process information (PID, UID, GID, inode, user) to events.
+    attachProcessInfo: true
+
+    # Serialize function arguments into stack trace frames. Arguments can
+    # contain any application data (form contents, domain objects) — disable
+    # for data minimization. Also controls argument capture for message events.
+    captureStacktraceVariables: true
+
+    # Register the SDK's own uncaught-exception listener. Flow's global
+    # exception handler already routes uncaught throwables into the
+    # ThrowableStorage (= Sentry), so the listener produces a second,
+    # context-poor event for the same incident. Disable to capture uncaught
+    # exceptions only through Flow. Note: exceptions whose renderingGroup
+    # sets logException: false (404/410 by default) are then not captured.
+    captureUncaughtExceptions: true
+
+    # Register the SDK's own PHP error listener. Errors Flow escalates to
+    # exceptions (exceptionalErrors: E_USER_ERROR, E_RECOVERABLE_ERROR)
+    # otherwise produce a duplicate event. With the listener disabled,
+    # warnings/notices no longer create standalone events and errorLevel
+    # only selects which fatal error types are captured at shutdown.
+    capturePhpErrors: true
+
+    # Which user information is attached to events:
+    # 'service'  — whatever the UserContextService returns (default)
+    # 'username' — only the username field
+    # 'sha1'     — only a sha1 hash of the username
+    # 'none'     — no user information at all
+    userContext: 'service'
+
     capture:
       excludeExceptionTypes:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
