@@ -223,15 +223,9 @@ class SentryClient
             $flowVersion = FLOW_VERSION_BRANCH;
         }
 
-        $currentSession = $this->sessionManager?->getCurrentSession();
-
-        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion, $currentSession): void {
+        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion): void {
             $scope->setTag('flow_version', $flowVersion);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
-
-            if ($currentSession instanceof Session && $currentSession->isStarted()) {
-                $scope->setTag('flow_session_sha1', sha1($currentSession->getId()));
-            }
         });
     }
 
@@ -276,11 +270,14 @@ class SentryClient
 
         $tags['exception_code'] = (string)$throwable->getCode();
 
-        $this->setTags();
-        $this->configureScope($extraData, $tags);
         $event = Event::createEvent();
         $this->addThrowableToEvent($throwable, $event);
-        $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
+
+        $sentryEventId = null;
+        SentrySdk::getCurrentHub()->withScope(function (Scope $scope) use ($event, $extraData, $tags, &$sentryEventId): void {
+            $this->applyCaptureScope($scope, $extraData, $tags);
+            $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
+        });
 
         return new CaptureResult(
             true,
@@ -299,12 +296,15 @@ class SentryClient
             );
         }
 
-        $this->setTags();
-        $this->configureScope($extraData, $tags);
         $eventHint = EventHint::fromArray([
             'stacktrace' => $this->prepareStacktrace(null)
         ]);
-        $sentryEventId = SentrySdk::getCurrentHub()->captureMessage($message, $severity, $eventHint);
+
+        $sentryEventId = null;
+        SentrySdk::getCurrentHub()->withScope(function (Scope $scope) use ($message, $severity, $eventHint, $extraData, $tags, &$sentryEventId): void {
+            $this->applyCaptureScope($scope, $extraData, $tags);
+            $sentryEventId = SentrySdk::getCurrentHub()->captureMessage($message, $severity, $eventHint);
+        });
 
         return new CaptureResult(
             true,
@@ -338,7 +338,12 @@ class SentryClient
         return false;
     }
 
-    private function configureScope(array $extraData, array $tags): void
+    /**
+     * Applies per-event data to a capture-local scope. Called inside withScope()
+     * so that nothing of this leaks into subsequent events of the same process
+     * (long-running CLI workers would otherwise accumulate stale data).
+     */
+    private function applyCaptureScope(Scope $scope, array $extraData, array $tags): void
     {
         $securityContext = Bootstrap::$staticObjectManager->get(SecurityContext::class);
         if ($securityContext instanceof SecurityContext && $securityContext->isInitialized()) {
@@ -347,15 +352,19 @@ class SentryClient
             $userContext = new UserContext();
         }
 
-        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($userContext, $extraData, $tags): void {
-            foreach ($extraData as $extraDataKey => $extraDataValue) {
-                $scope->setExtra($extraDataKey, $extraDataValue);
-            }
-            foreach ($tags as $tagKey => $tagValue) {
-                $scope->setTag($tagKey, $tagValue);
-            }
-            $scope->setUser($userContext->toArray());
-        });
+        foreach ($extraData as $extraDataKey => $extraDataValue) {
+            $scope->setExtra($extraDataKey, $extraDataValue);
+        }
+        foreach ($tags as $tagKey => $tagValue) {
+            $scope->setTag($tagKey, $tagValue);
+        }
+
+        $currentSession = $this->sessionManager?->getCurrentSession();
+        if ($currentSession instanceof Session && $currentSession->isStarted()) {
+            $scope->setTag('flow_session_sha1', sha1($currentSession->getId()));
+        }
+
+        $scope->setUser($userContext->toArray());
     }
 
     private function renderCleanPathAndFilename(string $rawPathAndFilename): string
