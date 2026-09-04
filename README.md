@@ -114,6 +114,30 @@ Flownative:
         'Neos\Flow\Mvc\Exception\NoSuchControllerException': false
 ```
 
+Arbitrary SDK options can be set as well, with some options being reserved for
+internal use:
+
+```yaml
+Flownative:
+  Sentry:
+    sdkOptions:
+      max_request_body_size: 'never'
+      send_default_pii: false
+      in_app_exclude:
+        - '/path/to/Packages/Libraries/acme/package/'
+```
+
+Reserved options are:
+
+- `before_send`
+- `before_send_transaction`
+- `before_send_check_in`
+- `before_send_log`
+- `before_send_metrics`
+- `ignore_exceptions`
+- `integrations`
+- `default_integrations`
+
 ## Additional Data
 
 Exceptions declared in an application can optionally implement
