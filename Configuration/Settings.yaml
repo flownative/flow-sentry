@@ -6,6 +6,14 @@ Flownative:
     sampleRate: 1.0
     tracesSampleRate: 0
     errorLevel: null
+
+    # Additional Sentry SDK client options passed to \Sentry\init(). Options set
+    # explicitly by this package (dsn, environment, release, sample rates, error
+    # level, exception excludes) always take precedence. The before_send*
+    # callbacks, ignore_exceptions and integrations cannot be set here.
+    # in_app_exclude entries are merged with the package defaults.
+    sdkOptions: {}
+
     capture:
       excludeExceptionTypes:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
