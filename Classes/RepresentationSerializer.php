@@ -14,6 +14,7 @@ namespace Flownative\Sentry;
  */
 
 use GuzzleHttp\Psr7\Response;
+use Neos\Eel\Context;
 use Neos\Flow\Cli\Request as CliRequest;
 use Neos\Flow\Mvc\ActionRequest;
 use Psr\Http\Message\RequestInterface;
@@ -43,6 +44,11 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
     protected function serializeObject($object, int $_depth = 0, array $hashes = []): mixed
     {
         if ($_depth >= $this->maxDepth || \in_array(spl_object_hash($object), $hashes, true)) {
+            return $this->serializeValue($object);
+        }
+
+        // Eel contexts may wrap arrays; evaluating __toString() can raise a secondary warning.
+        if ($object instanceof Context) {
             return $this->serializeValue($object);
         }
 
