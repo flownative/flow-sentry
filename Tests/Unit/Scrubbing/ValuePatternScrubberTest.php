@@ -7,6 +7,12 @@ use Flownative\Sentry\Scrubbing\ValuePatternScrubber;
 use PHPUnit\Framework\TestCase;
 use Sentry\Breadcrumb;
 use Sentry\Event;
+use Sentry\Options;
+use Sentry\Serializer\PayloadSerializer;
+use Sentry\Tracing\Span;
+use Sentry\Tracing\SpanContext;
+use Sentry\Tracing\SpanId;
+use Sentry\Tracing\SpanStatus;
 use Sentry\UserDataBag;
 
 final class ValuePatternScrubberTest extends TestCase
@@ -254,5 +260,41 @@ final class ValuePatternScrubberTest extends TestCase
         self::assertSame('GET /unsubscribe/[Filtered]', $event->getTransaction());
         self::assertSame('GET /person/[Filtered]', $span->getDescription());
         self::assertSame('lookup [Filtered]', $span->getData()['request_target']);
+    }
+
+    public function testSpanEntriesWithRedactedKeysAreRemoved(): void
+    {
+        $scrubber = $this->scrubberWith(['email']);
+        $spanContext = new SpanContext();
+        $spanContext->setParentSpanId(SpanId::generate());
+        $spanContext->setOp('db.query');
+        $spanContext->setDescription('SELECT subscriber');
+        $spanContext->setStatus(SpanStatus::ok());
+        $spanContext->setSampled(true);
+        $spanContext->setStartTimestamp(1755264000.25);
+        $spanContext->setEndTimestamp(1755264001.5);
+        $spanContext->setTags(['visitor@example.com' => 'visitor@example.com', 'db.system' => 'mysql']);
+        $spanContext->setData(['visitor@example.com' => ['note' => 'mail visitor@example.com'], 'db.rows' => 3]);
+        $span = new Span($spanContext);
+
+        $event = Event::createTransaction();
+        $event->setSpans([$span]);
+
+        $event = $scrubber->scrub($event, null);
+
+        $payload = (new PayloadSerializer(new Options()))->serialize($event);
+        self::assertStringNotContainsString('visitor@example.com', $payload);
+        $scrubbedSpan = $event->getSpans()[0];
+        self::assertSame(['[Filtered]' => '[Filtered]', 'db.system' => 'mysql'], $scrubbedSpan->getTags());
+        self::assertSame(['[Filtered]' => ['note' => 'mail [Filtered]'], 'db.rows' => 3], $scrubbedSpan->getData());
+        self::assertSame((string)$span->getSpanId(), (string)$scrubbedSpan->getSpanId());
+        self::assertSame((string)$span->getTraceId(), (string)$scrubbedSpan->getTraceId());
+        self::assertSame((string)$span->getParentSpanId(), (string)$scrubbedSpan->getParentSpanId());
+        self::assertSame('db.query', $scrubbedSpan->getOp());
+        self::assertSame('SELECT subscriber', $scrubbedSpan->getDescription());
+        self::assertSame((string)SpanStatus::ok(), (string)$scrubbedSpan->getStatus());
+        self::assertTrue($scrubbedSpan->getSampled());
+        self::assertSame(1755264000.25, $scrubbedSpan->getStartTimestamp());
+        self::assertSame(1755264001.5, $scrubbedSpan->getEndTimestamp());
     }
 }

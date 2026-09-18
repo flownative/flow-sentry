@@ -41,6 +41,7 @@ use Sentry\Severity;
 use Sentry\Stacktrace;
 use Sentry\StacktraceBuilder;
 use Sentry\State\Scope;
+use Sentry\UserDataBag;
 use Throwable;
 
 /**
@@ -169,11 +170,22 @@ class SentryClient
         );
 
         $scrubberChainFactory = $this->scrubberChainFactory;
-        $scrub = static function (Event $event, ?EventHint $hint) use ($scrubberChainFactory): ?Event {
-            if ($scrubberChainFactory === null) {
-                return $event;
+        $userContextMode = $this->userContextMode;
+        $captureStacktraceVariables = $this->captureStacktraceVariables;
+        $finalizeEvent = static function (Event $event, ?EventHint $hint) use ($scrubberChainFactory, $userContextMode, $captureStacktraceVariables): ?Event {
+            if ($scrubberChainFactory !== null) {
+                $event = $scrubberChainFactory->getChain()->process($event, $hint);
             }
-            return $scrubberChainFactory->getChain()->process($event, $hint);
+            if ($event === null) {
+                return null;
+            }
+            // Enforced here because SDK listeners and direct SDK captures
+            // bypass captureThrowable() and captureMessage()
+            self::applyUserContextMode($event, $userContextMode);
+            if (!$captureStacktraceVariables) {
+                self::removeStacktraceVariables($event);
+            }
+            return $event;
         };
         $captureLedger = new CaptureLedger();
 
@@ -215,7 +227,7 @@ class SentryClient
             'in_app_exclude' => $inAppExclude,
             'attach_stacktrace' => true,
             'error_types' => $this->errorLevel,
-            'before_send' => function (Event $event, ?EventHint $hint) use ($scrub, $captureLedger): ?Event {
+            'before_send' => function (Event $event, ?EventHint $hint) use ($finalizeEvent, $captureLedger): ?Event {
                 if ($hint?->exception) {
                     if ($this->shouldExcludeException($hint->exception)) {
                         return null;
@@ -226,14 +238,14 @@ class SentryClient
                     }
                 }
 
-                $event = $scrub($event, $hint);
+                $event = $finalizeEvent($event, $hint);
                 if ($event !== null && $hint?->exception) {
                     $captureLedger->remember($hint->exception);
                 }
                 return $event;
             },
-            'before_send_transaction' => $scrub,
-            'before_send_check_in' => $scrub
+            'before_send_transaction' => $finalizeEvent,
+            'before_send_check_in' => $finalizeEvent
         ] + $integrationOptions + $this->sdkOptions);
 
         $client = SentrySdk::getCurrentHub()->getClient();
@@ -463,15 +475,49 @@ class SentryClient
 
         switch ($this->userContextMode) {
             case 'username':
-                $scope->setUser(['username' => (string)($userContext->getUsername() ?? '')]);
-                break;
             case 'sha1':
-                $username = (string)($userContext->getUsername() ?? '');
-                $scope->setUser(['username' => $username !== '' ? sha1($username) : '']);
+                // Scope::setUser() merges, so an inherited user is removed first;
+                // hashing happens once, on the final event (applyUserContextMode())
+                $scope->removeUser();
+                $scope->setUser(['username' => (string)($userContext->getUsername() ?? '')]);
                 break;
             case 'service':
             default:
                 $scope->setUser($userContext->toArray());
+        }
+    }
+
+    /**
+     * Reduces the user of an outgoing event to the configured representation.
+     * The event's user object is shared with the scope it came from, so it is
+     * replaced, never modified.
+     */
+    private static function applyUserContextMode(Event $event, string $userContextMode): void
+    {
+        if ($userContextMode === 'service') {
+            return;
+        }
+        $username = (string)$event->getUser()?->getUsername();
+        if ($userContextMode === 'none' || $username === '') {
+            $event->setUser(null);
+            return;
+        }
+        $event->setUser(new UserDataBag(null, null, null, $userContextMode === 'sha1' ? sha1($username) : $username));
+    }
+
+    /**
+     * Unlike FrameVarsScrubber, this keeps file paths and source context.
+     */
+    private static function removeStacktraceVariables(Event $event): void
+    {
+        $stacktraces = [$event->getStacktrace()];
+        foreach ($event->getExceptions() as $exceptionDataBag) {
+            $stacktraces[] = $exceptionDataBag->getStacktrace();
+        }
+        foreach ($stacktraces as $stacktrace) {
+            foreach ($stacktrace?->getFrames() ?? [] as $frame) {
+                $frame->setVars([]);
+            }
         }
     }
 

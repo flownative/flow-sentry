@@ -32,7 +32,8 @@ Flownative:
 
     # Serialize function arguments into stack trace frames. Arguments can
     # contain any application data (form contents, domain objects) — disable
-    # for data minimization. Also controls argument capture for message events.
+    # for data minimization. Applies to every event, including those the SDK
+    # captures itself.
     captureStacktraceVariables: true
 
     # Register the SDK's own uncaught-exception listener. Flow's global
@@ -55,6 +56,8 @@ Flownative:
     # 'username' — only the username field
     # 'sha1'     — only a sha1 hash of the username
     # 'none'     — no user information at all
+    # 'username', 'sha1' and 'none' apply to every event, including those the
+    # SDK captures itself.
     userContext: 'service'
 
     capture:

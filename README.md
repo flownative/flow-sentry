@@ -295,6 +295,13 @@ Flownative:
 
 All defaults preserve the previous behavior of this package.
 
+`captureStacktraceVariables: false` and the `username`, `sha1` and `none`
+user context modes are enforced on every outgoing event, including events
+captured by the SDK's own listeners or by direct SDK calls. `username` and
+`sha1` keep only the (hashed) username of the user the event carries — the
+Flow account for events captured through this package — and drop all other
+user fields; an event without a username is sent without user information.
+
 ## Duplicate event prevention
 
 Two capture pipelines exist in a Flow application: the SDK's own listeners

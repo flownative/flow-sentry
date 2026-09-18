@@ -17,6 +17,8 @@ use RuntimeException;
 use Sentry\Breadcrumb;
 use Sentry\Event;
 use Sentry\EventHint;
+use Sentry\Tracing\Span;
+use Sentry\Tracing\SpanContext;
 
 /**
  * Redacts values matching named patterns from all free-text carrying parts
@@ -181,27 +183,65 @@ final class ValuePatternScrubber implements EventScrubberInterface
         if ($transaction !== null) {
             $event->setTransaction($this->scrubString($transaction));
         }
+        $spans = [];
+        $spansReplaced = false;
         foreach ($event->getSpans() as $span) {
             $description = $span->getDescription();
             if ($description !== null) {
                 $span->setDescription($this->scrubString($description));
             }
-            $spanTags = [];
-            foreach ($span->getTags() as $spanTagKey => $spanTagValue) {
-                $spanTags[$this->scrubString((string)$spanTagKey)] = $this->scrubString((string)$spanTagValue);
-            }
-            if ($spanTags !== []) {
-                $span->setTags($spanTags);
+            $spanTags = $span->getTags();
+            $scrubbedSpanTags = [];
+            foreach ($spanTags as $spanTagKey => $spanTagValue) {
+                $scrubbedSpanTags[$this->scrubString((string)$spanTagKey)] = $this->scrubString((string)$spanTagValue);
             }
             $spanData = $span->getData();
-            if (is_array($spanData) && $spanData !== []) {
-                $scrubbedSpanData = $this->scrubValue($spanData);
-                $span->setData(is_array($scrubbedSpanData) ? $scrubbedSpanData : []);
+            $scrubbedSpanData = $this->scrubValue($spanData);
+            $scrubbedSpanData = is_array($scrubbedSpanData) ? $scrubbedSpanData : [];
+            if (array_keys($scrubbedSpanTags) === array_keys($spanTags) && array_keys($scrubbedSpanData) === array_keys($spanData)) {
+                // Same keys: the merging setters overwrite every original entry
+                $span->setTags($scrubbedSpanTags);
+                $span->setData($scrubbedSpanData);
+            } else {
+                $span = $this->replaceSpan($span, $scrubbedSpanTags, $scrubbedSpanData);
+                $spansReplaced = true;
             }
+            $spans[] = $span;
+        }
+        if ($spansReplaced) {
+            $event->setSpans($spans);
         }
 
         // The user interface is deliberately not touched (allowed usernames survive).
         return $event;
+    }
+
+    /**
+     * Span::setTags() and Span::setData() merge into the existing entries, so
+     * an entry whose key was redacted can only be dropped by replacing the span.
+     * Span metric summaries (serialized by sentry/sentry < 4.23) have no public
+     * way to be copied and are dropped with it.
+     */
+    private function replaceSpan(Span $span, array $tags, array $data): Span
+    {
+        $spanContext = SpanContext::make()
+            ->setTraceId($span->getTraceId())
+            ->setSpanId($span->getSpanId())
+            ->setParentSpanId($span->getParentSpanId())
+            ->setSampled($span->getSampled())
+            ->setOp($span->getOp())
+            ->setDescription($span->getDescription())
+            ->setStatus($span->getStatus())
+            ->setStartTimestamp($span->getStartTimestamp())
+            ->setEndTimestamp($span->getEndTimestamp())
+            ->setTags($tags)
+            ->setData($data);
+        $replacement = new Span($spanContext);
+        if (method_exists($span, 'getOrigin')) {
+            // sentry/sentry >= 4.9
+            $replacement->setOrigin($span->getOrigin());
+        }
+        return $replacement;
     }
 
     private function scrubValue(mixed $value, int $depth = 0): mixed
