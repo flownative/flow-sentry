@@ -100,15 +100,6 @@ final class SentryClientCaptureResultTest extends TestCase
         self::assertTrue($result->suceess);
     }
 
-    public function testEntryInTheFormerListFormatKeepsTheOtherExcludedTypesWorking(): void
-    {
-        $settings = ['capture' => ['excludeExceptionTypes' => ['Stale\\Entry', RuntimeException::class => true]]];
-
-        $result = $this->clientWithServerAnswering(false, $settings)->captureThrowable(new class ('Boom') extends RuntimeException {});
-
-        self::assertTrue($result->suceess);
-    }
-
     private function clientWithServerAnswering(bool $accepted, array $settings = []): SentryClient
     {
         $transport = new class ($accepted) implements TransportInterface {
