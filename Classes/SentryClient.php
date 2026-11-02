@@ -74,6 +74,8 @@ class SentryClient
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
     protected array $sdkOptions = [];
+    protected array $redactedTypes = [];
+    protected ?RepresentationSerializer $representationSerializer = null;
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -128,6 +130,7 @@ class SentryClient
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
         $this->sdkOptions = $this->validateSdkOptions($settings['sdkOptions'] ?? []);
+        $this->redactedTypes = array_keys(array_filter($settings['redaction']['types'] ?? []));
     }
 
     public function initializeObject(): void
@@ -136,13 +139,14 @@ class SentryClient
             return;
         }
 
-        $representationSerializer = new RepresentationSerializer(
+        $this->representationSerializer = new RepresentationSerializer(
             new Options([])
         );
-        $representationSerializer->setSerializeAllObjects(true);
+        $this->representationSerializer->setSerializeAllObjects(true);
+        $this->representationSerializer->setRedactedTypes($this->redactedTypes);
         $this->stacktraceBuilder = new StacktraceBuilder(
             new Options([]),
-            $representationSerializer
+            $this->representationSerializer
         );
 
         $inAppExclude = [
@@ -172,8 +176,9 @@ class SentryClient
                     return null;
                 }
 
-                return $event;
-            }
+                return $this->representationSerializer->redactEvent($event);
+            },
+            'before_send_transaction' => fn (Event $event): Event => $this->representationSerializer->redactEvent($event),
         ] + $this->sdkOptions);
 
         $client = SentrySdk::getCurrentHub()->getClient();

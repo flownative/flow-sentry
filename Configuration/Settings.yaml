@@ -14,6 +14,12 @@ Flownative:
     # in_app_exclude entries are merged with the package defaults.
     sdkOptions: {}
 
+    # Classes or interfaces whose objects, subclasses and implementers included,
+    # reach Sentry only by their class and shape (length, encoding, unusual code
+    # points), in stack frames, extra data, contexts and breadcrumbs.
+    redaction:
+      types: {}
+
     capture:
       excludeExceptionTypes:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true

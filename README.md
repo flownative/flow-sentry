@@ -138,6 +138,40 @@ Reserved options are:
 - `integrations`
 - `default_integrations`
 
+## Redacting values
+
+Stack frames show objects through `__toString()` and `jsonSerialize()`, so value
+objects holding personal data or secrets reach Sentry as they are. Name the
+classes or interfaces which must not show their value:
+
+```yaml
+Flownative:
+  Sentry:
+    redaction:
+      types:
+        'Acme\\Shop\\Domain\\PersonalData': true
+        'Acme\\Shop\\Domain\\EmailAddress': true
+```
+
+A type matches through `instanceof`, so subclasses and implementers of an
+interface are included, and your domain code does not need to know about this
+package. An object of such a type is sent like this, in stack frames, extra
+data, contexts and breadcrumbs:
+
+```json
+{
+    "__class": "Acme\\Shop\\Domain\\EmailAddress",
+    "__shape": "16 characters, 16 bytes, UTF-8, NFC, unusual U+200B"
+}
+```
+
+The shape tells apart the empty string, broken encoding or an invisible
+character without showing the value. It is taken from the object's string form,
+else from its JSON form. An object with neither is sent with its class only.
+
+No type is redacted by default. Only objects are covered: a plain string
+argument is still shown, and so is a stringable object holding a redacted one.
+
 ## Additional Data
 
 Exceptions declared in an application can optionally implement
@@ -186,6 +220,15 @@ Keep in mind that the breadcrumb handler provided by this package might be
 disabled when doing this, depending on your configuration. Sentry provides
 a monolog integration for that purpose, see `Sentry\Monolog\BreadcrumbHandler`
 and https://docs.sentry.io/platforms/php/integrations/monolog/. 
+
+## Running the tests
+
+The unit tests run from a Flow distribution which has this package installed
+from source:
+
+```bash
+bin/phpunit --bootstrap Packages/Libraries/autoload.php Packages/Application/Flownative.Sentry/Tests/Unit
+```
 
 ## Testing the Client
 
