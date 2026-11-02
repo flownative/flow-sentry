@@ -17,6 +17,7 @@ use ErrorException;
 use Flownative\Sentry\SentryClient;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use ReflectionMethod;
 use ReflectionProperty;
 use RuntimeException;
@@ -84,6 +85,14 @@ final class SentryClientExclusionTest extends TestCase
         self::assertFalse($this->isExcluded($client, $this->exceptionInLibrary()));
     }
 
+    public function testIntegerKeyIsTakenAsTheMask(): void
+    {
+        $client = $this->clientExcluding([E_WARNING | E_DEPRECATED => ['Packages/Libraries/']]);
+
+        self::assertTrue($this->isExcluded($client, $this->errorInLibrary(E_DEPRECATED)));
+        self::assertFalse($this->isExcluded($client, $this->errorInLibrary(E_NOTICE)));
+    }
+
     public function testKeysOfTheSameMaskKeepAllTheirPrefixes(): void
     {
         $client = $this->clientExcluding([
@@ -108,6 +117,32 @@ final class SentryClientExclusionTest extends TestCase
         $client = $this->clientExcluding(['E_WARNING' => ['/', './', '']]);
 
         self::assertFalse($this->isExcluded($client, $this->errorInLibrary(E_WARNING)));
+    }
+
+    public function testUnknownNameWarnsAndTheOtherLevelsOfTheKeyStillApply(): void
+    {
+        $client = $this->clientExcluding(['E_WARNIN | E_DEPRECATED | PHP_VERSION' => ['Packages/Libraries/']]);
+        $warnings = $this->warningsOf($client);
+
+        self::assertCount(2, $warnings);
+        self::assertStringContainsString('"E_WARNIN"', $warnings[0]);
+        self::assertStringContainsString('"PHP_VERSION"', $warnings[1]);
+        self::assertTrue($this->isExcluded($client, $this->errorInLibrary(E_DEPRECATED)));
+        self::assertFalse($this->isExcluded($client, $this->errorInLibrary(E_WARNING)));
+    }
+
+    public function testListInsteadOfAMapWarns(): void
+    {
+        $client = $this->clientExcluding(['Packages/Libraries/']);
+
+        self::assertStringContainsString('"0"', $this->warningsOf($client)[0]);
+    }
+
+    public function testKnownLevelsDoNotWarn(): void
+    {
+        $client = $this->clientExcluding([self::COMBINED_KEY => ['Packages/Libraries/'], E_NOTICE => []]);
+
+        self::assertSame([], $this->warningsOf($client));
     }
 
     private function clientExcluding(array $excludeExceptionFilePathPrefixesByErrorLevel): SentryClient
@@ -136,5 +171,21 @@ final class SentryClientExclusionTest extends TestCase
     private function isExcluded(SentryClient $client, Throwable $throwable): bool
     {
         return (new ReflectionMethod($client, 'shouldExcludeException'))->invoke($client, $throwable);
+    }
+
+    /**
+     * @return string[]
+     */
+    private function warningsOf(SentryClient $client): array
+    {
+        $warnings = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('warning')->willReturnCallback(static function (string $message) use (&$warnings): void {
+            $warnings[] = $message;
+        });
+        (new ReflectionProperty($client, 'logger'))->setValue($client, $logger);
+        (new ReflectionMethod($client, 'warnAboutUnknownErrorLevels'))->invoke($client);
+
+        return $warnings;
     }
 }

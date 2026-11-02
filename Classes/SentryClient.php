@@ -76,6 +76,7 @@ class SentryClient
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
     protected array $excludeExceptionFilePathPrefixesByErrorLevel = [];
+    protected array $unknownErrorLevels = [];
     protected array $sdkOptions = [];
     protected array $redactedTypes = [];
     protected ?RepresentationSerializer $representationSerializer = null;
@@ -134,6 +135,7 @@ class SentryClient
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
 
         $this->excludeExceptionFilePathPrefixesByErrorLevel = [];
+        $this->unknownErrorLevels = [];
         foreach ($settings['capture']['excludeExceptionFilePathPrefixesByErrorLevel'] ?? [] as $levelMask => $pathPrefixes) {
             $mask = $this->resolveErrorLevelMask($levelMask);
             $this->excludeExceptionFilePathPrefixesByErrorLevel[$mask] = array_merge(
@@ -157,6 +159,7 @@ class SentryClient
         $this->representationSerializer->setSerializeAllObjects(true);
         $this->representationSerializer->setRedactedTypes($this->redactedTypes);
         $this->warnAboutUnknownRedactedTypes();
+        $this->warnAboutUnknownErrorLevels();
         $this->stacktraceBuilder = new StacktraceBuilder(
             new Options([]),
             $this->representationSerializer
@@ -206,6 +209,17 @@ class SentryClient
         try {
             foreach ($this->representationSerializer->unknownRedactedTypes() as $type) {
                 $this->logger->warning(sprintf('Flownative.Sentry.redaction.types names "%s", which is no class or interface, so its objects are not redacted', $type), LogEnvironment::fromMethodName(__METHOD__));
+            }
+        } catch (\Throwable) {
+            // A logger that is not ready yet must not keep errors from being reported.
+        }
+    }
+
+    private function warnAboutUnknownErrorLevels(): void
+    {
+        try {
+            foreach ($this->unknownErrorLevels as $errorLevel) {
+                $this->logger->warning(sprintf('Flownative.Sentry.capture.excludeExceptionFilePathPrefixesByErrorLevel names "%s", which is no PHP error level, so it excludes nothing', $errorLevel), LogEnvironment::fromMethodName(__METHOD__));
             }
         } catch (\Throwable) {
             // A logger that is not ready yet must not keep errors from being reported.
@@ -398,13 +412,27 @@ class SentryClient
         return false;
     }
 
-    private function resolveErrorLevelMask(string $config): int
+    /**
+     * A YAML key arrives as a string of level names, or as an integer if written as
+     * a number, which is then taken as the mask itself.
+     */
+    private function resolveErrorLevelMask(int|string $errorLevels): int
     {
+        if (is_int($errorLevels)) {
+            if ($errorLevels > 0) {
+                return $errorLevels;
+            }
+            $this->unknownErrorLevels[] = (string)$errorLevels;
+            return 0;
+        }
+
         $mask = 0;
-        foreach (explode('|', $config) as $constantName) {
+        foreach (explode('|', $errorLevels) as $constantName) {
             $constantName = trim($constantName);
-            if (defined($constantName)) {
+            if (str_starts_with($constantName, 'E_') && defined($constantName) && is_int(constant($constantName))) {
                 $mask |= constant($constantName);
+            } else {
+                $this->unknownErrorLevels[] = $constantName;
             }
         }
         return $mask;

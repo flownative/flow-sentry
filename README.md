@@ -111,6 +111,8 @@ The file path exclusion applies to `ErrorException`s, because only these have
 an error level. That is how the Sentry SDK reports PHP warnings, notices and
 deprecations. Any other throwable is never excluded by this setting, even if
 `E_ERROR` is configured. Each key names one or more levels, separated by `|`.
+A number is taken as a bitmask, and a name which is no PHP error level leads to
+a warning in the system log when Sentry is set up.
 
 Levels listed in Flow's `Neos.Flow.error.errorHandler.exceptionalErrors` are
 reported twice: as an `ErrorException`, which this setting can exclude, and as
