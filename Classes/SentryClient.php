@@ -13,6 +13,7 @@ namespace Flownative\Sentry;
  * source code.
  */
 
+use ErrorException;
 use Flownative\Sentry\Context\UserContext;
 use Flownative\Sentry\Context\UserContextServiceInterface;
 use Flownative\Sentry\Context\WithExtraDataInterface;
@@ -132,9 +133,13 @@ class SentryClient
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
 
+        $this->excludeExceptionFilePathPrefixesByErrorLevel = [];
         foreach ($settings['capture']['excludeExceptionFilePathPrefixesByErrorLevel'] ?? [] as $levelMask => $pathPrefixes) {
             $mask = $this->resolveErrorLevelMask($levelMask);
-            $this->excludeExceptionFilePathPrefixesByErrorLevel[$mask] = $pathPrefixes;
+            $this->excludeExceptionFilePathPrefixesByErrorLevel[$mask] = array_merge(
+                $this->excludeExceptionFilePathPrefixesByErrorLevel[$mask] ?? [],
+                (array)$pathPrefixes
+            );
         }
         $this->sdkOptions = $this->validateSdkOptions($settings['sdkOptions'] ?? []);
         $this->redactedTypes = array_keys(array_filter($settings['redaction']['types'] ?? []));
@@ -366,22 +371,24 @@ class SentryClient
         return false;
     }
 
+    /**
+     * Only an ErrorException carries an error level. Any other throwable is never
+     * excluded here, or configuring E_ERROR would hide every exception of a path.
+     */
     private function isExcludedByErrorLevelAndFilePath(Throwable $throwable): bool
     {
-        $severity = E_ERROR;
-        if ($throwable instanceof \ErrorException) {
-            $severity = $throwable->getSeverity();
-        }
-        if (!isset($this->excludeExceptionFilePathPrefixesByErrorLevel[$severity])) {
+        if (!$throwable instanceof ErrorException) {
             return false;
         }
 
+        $severity = $throwable->getSeverity();
         $filePath = $throwable->getFile();
         foreach ($this->excludeExceptionFilePathPrefixesByErrorLevel as $errorLevelMask => $pathPrefixes) {
             if (($severity & $errorLevelMask) === 0) {
                 continue;
             }
-            foreach ((array)$pathPrefixes as $pathPrefix) {
+            foreach ($pathPrefixes as $pathPrefix) {
+                $pathPrefix = preg_replace('#^(\./|/)+#', '', $pathPrefix);
                 if ($pathPrefix !== '' && str_starts_with($filePath, FLOW_PATH_ROOT . $pathPrefix)) {
                     return true;
                 }

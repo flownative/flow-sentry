@@ -85,7 +85,7 @@ The default is `null`, that makes Sentry use the value returned by the
 **Beware:** a low error log level can lead to your application not loading
 anymore and your Sentry account being flooded with error messages.
 
-Throwables (that include exceptions and runtime errors) are logged as Sentry events.
+Throwables (which include exceptions and runtime errors) are logged as Sentry events.
 You may configure some exclusions that should not be recorded:
 - Exception types
 - Exception message regular expressions
@@ -106,6 +106,20 @@ Flownative:
         'E_WARNING | E_DEPRECATED | E_USER_DEPRECATED':
           - 'Packages/Libraries/'
 ```
+
+The file path exclusion applies to `ErrorException`s, because only these have
+an error level. That is how the Sentry SDK reports PHP warnings, notices and
+deprecations. Any other throwable is never excluded by this setting, even if
+`E_ERROR` is configured. Each key names one or more levels, separated by `|`.
+
+Levels listed in Flow's `Neos.Flow.error.errorHandler.exceptionalErrors` are
+reported twice: as an `ErrorException`, which this setting can exclude, and as
+the exception Flow then throws, which it cannot. The Development and Testing
+contexts of Flow list `E_WARNING` there by default.
+
+Classes proxied by Flow are reported from `Data/Temporary/`, not from their
+package, so a prefix like `Packages/Application/` does not match errors raised
+in them.
 
 By default all Flow exceptions with a status code of 404 are ignored. In case
 you want to see those in Sentry, you can include them case-by-case like so:
