@@ -5,18 +5,12 @@ namespace Flownative\Sentry\Log;
 
 use Flownative\Sentry\SentryClientTrait;
 use Neos\Flow\Annotations as Flow;
-use Neos\Flow\Configuration\ConfigurationManager;
-use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Log\ThrowableStorage\FileStorage;
 use Neos\Flow\Log\ThrowableStorageInterface;
-use Neos\Flow\ObjectManagement\CompileTimeObjectManager;
-use Neos\Flow\ObjectManagement\ObjectManagerInterface;
 
 /**
- * Captures a throwable to Sentry and (optionally) also stores a Flow exception dump file
- * (Data/Logs/Exceptions/*.txt) like the default FileStorage.
- *
- * The file dump logging can be disabled via `Flownative.Sentry.storageLogging` (default: true).
+ * Captures a throwable to Sentry and writes a dump file through Flow's FileStorage
+ * if the option writeDumpFiles asks for it or capturing fails.
  *
  * @phpstan-consistent-constructor
  * @Flow\Proxy(false)
@@ -26,12 +20,7 @@ class SentryStorage implements ThrowableStorageInterface
 {
     use SentryClientTrait;
 
-    private ?FileStorage $fileStorage = null;
-    private array $fileStorageOptions = [];
-
-    private ?bool $storageLoggingOption = null;
-    private ?bool $resolvedStorageLogging = null;
-
+    private array $options = [];
     private ?\Closure $requestInformationRenderer = null;
     private ?\Closure $backtraceRenderer = null;
 
@@ -43,24 +32,9 @@ class SentryStorage implements ThrowableStorageInterface
      */
     public static function createWithOptions(array $options): ThrowableStorageInterface
     {
-        $storageLoggingOption = array_key_exists('storageLogging', $options) ? (bool)$options['storageLogging'] : null;
-
-        // Allow passing FileStorage options either directly, or nested under "fileStorageOptions".
-        $fileStorageOptions = $options['fileStorageOptions'] ?? $options;
-        if (is_array($fileStorageOptions) && array_key_exists('storageLogging', $fileStorageOptions)) {
-            unset($fileStorageOptions['storageLogging']);
-        }
-        if (is_array($fileStorageOptions) && array_key_exists('fileStorageOptions', $fileStorageOptions)) {
-            unset($fileStorageOptions['fileStorageOptions']);
-        }
-
-        return new static($fileStorageOptions, $storageLoggingOption);
-    }
-
-    public function __construct(array $fileStorageOptions = [], ?bool $storageLoggingOption = null)
-    {
-        $this->fileStorageOptions = $fileStorageOptions;
-        $this->storageLoggingOption = $storageLoggingOption;
+        $storage = new static();
+        $storage->options = $options;
+        return $storage;
     }
 
     /**
@@ -70,9 +44,6 @@ class SentryStorage implements ThrowableStorageInterface
     public function setRequestInformationRenderer(\Closure $requestInformationRenderer): ThrowableStorageInterface
     {
         $this->requestInformationRenderer = $requestInformationRenderer;
-        if ($this->fileStorage !== null) {
-            $this->fileStorage->setRequestInformationRenderer($requestInformationRenderer);
-        }
         return $this;
     }
 
@@ -83,9 +54,6 @@ class SentryStorage implements ThrowableStorageInterface
     public function setBacktraceRenderer(\Closure $backtraceRenderer): ThrowableStorageInterface
     {
         $this->backtraceRenderer = $backtraceRenderer;
-        if ($this->fileStorage !== null) {
-            $this->fileStorage->setBacktraceRenderer($backtraceRenderer);
-        }
         return $this;
     }
 
@@ -103,80 +71,48 @@ class SentryStorage implements ThrowableStorageInterface
      */
     public function logThrowable(\Throwable $throwable, array $additionalData = []): string
     {
-        $message = $this->isStorageLoggingEnabled()
-            ? $this->getFileStorage()->logThrowable($throwable, $additionalData)
-            : $this->getErrorLogMessage($throwable);
-
-        // Also capture to Sentry (best-effort)
+        $captured = false;
+        $sentryMessage = 'no client available';
         try {
             if ($sentryClient = self::getSentryClient()) {
                 $captureResult = $sentryClient->captureThrowable($throwable, $additionalData);
-
-                return sprintf(
-                    '%s (Sentry: %s – %s)',
-                    $message,
+                $captured = $captureResult->suceess;
+                $sentryMessage = sprintf(
+                    '%s – %s',
                     $captureResult->eventId ? '#' . $captureResult->eventId : 'no ID',
-                    $captureResult->message ?: ($captureResult->suceess ? 'ok' : 'failed'),
+                    $captureResult->message ?: ($captured ? 'ok' : 'failed'),
                 );
             }
         } catch (\Throwable $e) {
-            return sprintf('%s (Sentry: Error capturing message – %s [%s])', $message, $e->getMessage(), (string)$e->getCode());
+            $sentryMessage = 'Error capturing message – ' . $this->getErrorLogMessage($e);
         }
 
-        return $message . ' (Sentry: no client available)';
+        $message = !$captured || ($this->options['writeDumpFiles'] ?? false)
+            ? $this->writeDumpFile($throwable, $additionalData)
+            : $this->getErrorLogMessage($throwable);
+
+        return sprintf('%s (Sentry: %s)', $message, $sentryMessage);
     }
 
-    private function getFileStorage(): FileStorage
-    {
-        if ($this->fileStorage === null) {
-            $this->fileStorage = FileStorage::createWithOptions($this->fileStorageOptions);
-            if ($this->requestInformationRenderer !== null) {
-                $this->fileStorage->setRequestInformationRenderer($this->requestInformationRenderer);
-            }
-            if ($this->backtraceRenderer !== null) {
-                $this->fileStorage->setBacktraceRenderer($this->backtraceRenderer);
-            }
-        }
-
-        return $this->fileStorage;
-    }
-
-    private function isStorageLoggingEnabled(): bool
-    {
-        if ($this->resolvedStorageLogging !== null) {
-            return $this->resolvedStorageLogging;
-        }
-
-        if ($this->storageLoggingOption !== null) {
-            return $this->resolvedStorageLogging = $this->storageLoggingOption;
-        }
-
-        $settings = $this->getPackageSettings();
-        if (is_array($settings) && array_key_exists('storageLogging', $settings)) {
-            return $this->resolvedStorageLogging = (bool)$settings['storageLogging'];
-        }
-
-        return $this->resolvedStorageLogging = true;
-    }
-
-    private function getPackageSettings(): ?array
+    private function writeDumpFile(\Throwable $throwable, array $additionalData): string
     {
         try {
-            if (!Bootstrap::$staticObjectManager instanceof ObjectManagerInterface || Bootstrap::$staticObjectManager instanceof CompileTimeObjectManager) {
-                return null;
+            $fileStorage = FileStorage::createWithOptions($this->options);
+            if ($this->requestInformationRenderer !== null) {
+                $fileStorage->setRequestInformationRenderer($this->requestInformationRenderer);
             }
-
-            $configurationManager = Bootstrap::$staticObjectManager->get(ConfigurationManager::class);
-            /** @var array|null $settings */
-            $settings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS, 'Flownative.Sentry');
-
-            return is_array($settings) ? $settings : null;
+            if ($this->backtraceRenderer !== null) {
+                $fileStorage->setBacktraceRenderer($this->backtraceRenderer);
+            }
+            $message = $fileStorage->logThrowable($throwable, $additionalData);
+            // FileStorage answers an unwritable directory with a message that omits the throwable.
+            return str_contains($message, ' - See also: ') ? $message : $this->getErrorLogMessage($throwable) . ' – ' . $message;
         } catch (\Throwable $e) {
-            return null;
+            return $this->getErrorLogMessage($throwable) . ' – Could not write a dump file: ' . $e->getMessage();
         }
     }
 
-    private function getErrorLogMessage(\Throwable $error): string
+    protected function getErrorLogMessage(\Throwable $error): string
     {
         // getCode() does not always return an integer, e.g. in PDOException it can be a string
         if (is_int($error->getCode()) && $error->getCode() > 0) {

@@ -82,16 +82,6 @@ The default is `null`, that makes Sentry use the value returned by the
 `error_reporting()` function. The available error levels are documented at
 [PHP error constants](https://www.php.net/manual/en/errorfunc.constants.php).
 
-By default, this package also keeps Flow's exception dump files in
-`Data/Logs/Exceptions/*.txt` (so the Neos/Flow message "For a full stacktrace, open …"
-still works). You can disable writing those dump files with:
-
-```yaml
-Flownative:
-  Sentry:
-    storageLogging: false
-```
-
 **Beware:** a low error log level can lead to your application not loading
 anymore and your Sentry account being flooded with error messages.
 
@@ -259,6 +249,37 @@ disabled when doing this, depending on your configuration. Sentry provides
 a monolog integration for that purpose, see `Sentry\Monolog\BreadcrumbHandler`
 and https://docs.sentry.io/platforms/php/integrations/monolog/. 
 
+## Exception dump files
+
+By default, a throwable reported to Sentry leaves no dump file in
+`Data/Logs/Exceptions`. To write one for every throwable as well, set the option
+`writeDumpFiles` of the throwable storage:
+
+```yaml
+Neos:
+  Flow:
+    log:
+      throwables:
+        optionsByImplementation:
+          'Flownative\Sentry\Log\SentryStorage':
+            writeDumpFiles: true
+```
+
+The default is `false`. Whatever the option says, a dump file is written when
+no Sentry client is available, no DSN is set, or capturing fails, so the details
+of the throwable are not lost. A throwable excluded by the `capture` settings, or
+dropped by `sampleRate`, counts as handled and writes none. If the dump file
+cannot be written, the throwable is still reported to Sentry and the returned
+message says what went wrong.
+
+`storagePath`, `maximumThrowableDumpAge` and `maximumThrowableDumpCount` in the
+same options work as for Flow's own `FileStorage`. Without a path the files go to
+`Data/Logs/Exceptions`, and an age or count of `0` turns off that cleanup; this
+package sets 30 days and 10,000 files, as Flow does.
+
+Dump files hold request data and stack traces in clear text on disk, and
+`redaction.types` does not apply to them.
+
 ## Running the tests
 
 The unit tests run from a Flow distribution which has this package installed
@@ -310,6 +331,10 @@ Test "previous" exception in ThrowingClass
 
 Open Data/Logs/Exceptions/202411181211403b652e.txt for a full stack trace.
 ```
+
+Flow prints that last line for every logged exception. The file only exists
+when a dump file was written (see "Exception dump files"); with the default
+settings and a working DSN, the stack trace is in Sentry.
 
 There are two more test modes for message capturing and error handling:
 
