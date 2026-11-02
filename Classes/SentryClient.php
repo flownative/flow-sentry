@@ -13,13 +13,16 @@ namespace Flownative\Sentry;
  * source code.
  */
 
+use ErrorException;
 use Flownative\Sentry\Context\UserContext;
 use Flownative\Sentry\Context\UserContextServiceInterface;
 use Flownative\Sentry\Context\WithExtraDataInterface;
+use Flownative\Sentry\Exception\InvalidConfigurationException;
 use Flownative\Sentry\Log\CaptureResult;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
+use Neos\Flow\Log\Utility\LogEnvironment;
 use Neos\Flow\Package\Exception\UnknownPackageException;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Security\Context as SecurityContext;
@@ -46,6 +49,22 @@ use Throwable;
  */
 class SentryClient
 {
+    /**
+     * SDK options which must not be set via the sdkOptions passthrough, either
+     * because the package composes them itself or because they cannot be
+     * expressed in YAML.
+     */
+    private const RESERVED_SDK_OPTIONS = [
+        'before_send',
+        'before_send_transaction',
+        'before_send_check_in',
+        'before_send_log',
+        'before_send_metrics',
+        'ignore_exceptions',
+        'integrations',
+        'default_integrations',
+    ];
+
     protected string $dsn;
     protected string $environment;
     protected string $release;
@@ -56,6 +75,11 @@ class SentryClient
     protected array $excludeExceptionTypes = [];
     protected array $excludeExceptionMessagePatterns = [];
     protected array $excludeExceptionCodes = [];
+    protected array $excludeExceptionFilePathPrefixesByErrorLevel = [];
+    protected array $unknownErrorLevels = [];
+    protected array $sdkOptions = [];
+    protected array $redactedTypes = [];
+    protected ?RepresentationSerializer $representationSerializer = null;
     protected ?StacktraceBuilder $stacktraceBuilder = null;
 
     /**
@@ -109,6 +133,18 @@ class SentryClient
         $this->excludeExceptionMessagePatterns = $settings['capture']['excludeExceptionMessagePatterns'] ?? [];
         $this->excludeExceptionCodes = $settings['capture']['excludeExceptionCodes'] ?? [];
         $this->errorLevel = $settings['errorLevel'] ?? error_reporting();
+
+        $this->excludeExceptionFilePathPrefixesByErrorLevel = [];
+        $this->unknownErrorLevels = [];
+        foreach ($settings['capture']['excludeExceptionFilePathPrefixesByErrorLevel'] ?? [] as $levelMask => $pathPrefixes) {
+            $mask = $this->resolveErrorLevelMask($levelMask);
+            $this->excludeExceptionFilePathPrefixesByErrorLevel[$mask] = array_merge(
+                $this->excludeExceptionFilePathPrefixesByErrorLevel[$mask] ?? [],
+                (array)$pathPrefixes
+            );
+        }
+        $this->sdkOptions = $this->validateSdkOptions($settings['sdkOptions'] ?? []);
+        $this->redactedTypes = array_keys(array_filter($settings['redaction']['types'] ?? []));
     }
 
     public function initializeObject(): void
@@ -117,14 +153,28 @@ class SentryClient
             return;
         }
 
-        $representationSerializer = new RepresentationSerializer(
+        $this->representationSerializer = new RepresentationSerializer(
             new Options([])
         );
-        $representationSerializer->setSerializeAllObjects(true);
+        $this->representationSerializer->setSerializeAllObjects(true);
+        $this->representationSerializer->setRedactedTypes($this->redactedTypes);
+        $this->warnAboutUnknownRedactedTypes();
+        $this->warnAboutUnknownErrorLevels();
         $this->stacktraceBuilder = new StacktraceBuilder(
             new Options([]),
-            $representationSerializer
+            $this->representationSerializer
         );
+
+        $inAppExclude = [
+            FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
+            FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
+            FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
+        ];
+        if (isset($this->sdkOptions['in_app_exclude'])) {
+            $inAppExclude = array_unique(array_merge($inAppExclude, (array)$this->sdkOptions['in_app_exclude']));
+        }
 
         \Sentry\init([
             'dsn' => $this->dsn,
@@ -133,13 +183,7 @@ class SentryClient
             'sample_rate' => $this->sampleRate,
             'traces_sample_rate' => $this->tracesSampleRate,
             'ignore_exceptions' => array_map('strval', array_keys(array_filter($this->excludeExceptionTypes))),
-            'in_app_exclude' => [
-                FLOW_PATH_ROOT . '/Packages/Application/Flownative.Sentry/Classes/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Aop/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Error/',
-                FLOW_PATH_ROOT . '/Packages/Framework/Neos.Flow/Classes/Log/',
-                FLOW_PATH_ROOT . '/Packages/Libraries/neos/flow-log/'
-            ],
+            'in_app_exclude' => $inAppExclude,
             'attach_stacktrace' => true,
             'error_types' => $this->errorLevel,
             'before_send' => function (Event $event, ?EventHint $hint): ?Event {
@@ -148,15 +192,64 @@ class SentryClient
                     return null;
                 }
 
-                return $event;
-            }
-        ]);
+                return $this->representationSerializer->redactEvent($event);
+            },
+            'before_send_transaction' => fn (Event $event): Event => $this->representationSerializer->redactEvent($event),
+        ] + $this->sdkOptions);
 
         $client = SentrySdk::getCurrentHub()->getClient();
         if (!$client) {
             return;
         }
         $this->setTags();
+    }
+
+    private function warnAboutUnknownRedactedTypes(): void
+    {
+        try {
+            foreach ($this->representationSerializer->unknownRedactedTypes() as $type) {
+                $this->logger->warning(sprintf('Flownative.Sentry.redaction.types names "%s", which is no class or interface, so its objects are not redacted', $type), LogEnvironment::fromMethodName(__METHOD__));
+            }
+        } catch (\Throwable) {
+            // A logger that is not ready yet must not keep errors from being reported.
+        }
+    }
+
+    private function warnAboutUnknownErrorLevels(): void
+    {
+        try {
+            foreach ($this->unknownErrorLevels as $errorLevel) {
+                $this->logger->warning(sprintf('Flownative.Sentry.capture.excludeExceptionFilePathPrefixesByErrorLevel names "%s", which is no PHP error level, so it excludes nothing', $errorLevel), LogEnvironment::fromMethodName(__METHOD__));
+            }
+        } catch (\Throwable) {
+            // A logger that is not ready yet must not keep errors from being reported.
+        }
+    }
+
+    /**
+     * @throws InvalidConfigurationException
+     */
+    private function validateSdkOptions(mixed $sdkOptions): array
+    {
+        if (!is_array($sdkOptions)) {
+            throw new InvalidConfigurationException(
+                'Flownative.Sentry.sdkOptions must be an array of Sentry SDK options',
+                1755264001
+            );
+        }
+        foreach (self::RESERVED_SDK_OPTIONS as $reservedOption) {
+            if (array_key_exists($reservedOption, $sdkOptions)) {
+                throw new InvalidConfigurationException(
+                    sprintf(
+                        'The Sentry SDK option "%s" cannot be set via Flownative.Sentry.sdkOptions.%s because it is managed by this package',
+                        $reservedOption,
+                        $reservedOption
+                    ),
+                    1755264002
+                );
+            }
+        }
+        return $sdkOptions;
     }
 
     private function setTags(): void
@@ -173,15 +266,9 @@ class SentryClient
             $flowVersion = FLOW_VERSION_BRANCH;
         }
 
-        $currentSession = $this->sessionManager?->getCurrentSession();
-
-        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion, $currentSession): void {
+        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($flowVersion): void {
             $scope->setTag('flow_version', $flowVersion);
             $scope->setTag('flow_context', (string)Bootstrap::$staticObjectManager->get(Environment::class)->getContext());
-
-            if ($currentSession instanceof Session && $currentSession->isStarted()) {
-                $scope->setTag('flow_session_sha1', sha1($currentSession->getId()));
-            }
         });
     }
 
@@ -226,11 +313,14 @@ class SentryClient
 
         $tags['exception_code'] = (string)$throwable->getCode();
 
-        $this->setTags();
-        $this->configureScope($extraData, $tags);
         $event = Event::createEvent();
         $this->addThrowableToEvent($throwable, $event);
-        $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
+
+        $sentryEventId = null;
+        SentrySdk::getCurrentHub()->withScope(function (Scope $scope) use ($event, $extraData, $tags, &$sentryEventId): void {
+            $this->applyCaptureScope($scope, $extraData, $tags);
+            $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
+        });
 
         return new CaptureResult(
             true,
@@ -249,12 +339,15 @@ class SentryClient
             );
         }
 
-        $this->setTags();
-        $this->configureScope($extraData, $tags);
         $eventHint = EventHint::fromArray([
             'stacktrace' => $this->prepareStacktrace(null)
         ]);
-        $sentryEventId = SentrySdk::getCurrentHub()->captureMessage($message, $severity, $eventHint);
+
+        $sentryEventId = null;
+        SentrySdk::getCurrentHub()->withScope(function (Scope $scope) use ($message, $severity, $eventHint, $extraData, $tags, &$sentryEventId): void {
+            $this->applyCaptureScope($scope, $extraData, $tags);
+            $sentryEventId = SentrySdk::getCurrentHub()->captureMessage($message, $severity, $eventHint);
+        });
 
         return new CaptureResult(
             true,
@@ -274,6 +367,10 @@ class SentryClient
             return true;
         }
 
+        if ($this->isExcludedByErrorLevelAndFilePath($throwable)) {
+            return true;
+        }
+
         $message = $throwable->getMessage();
         if (array_reduce(
             $this->excludeExceptionMessagePatterns,
@@ -288,7 +385,65 @@ class SentryClient
         return false;
     }
 
-    private function configureScope(array $extraData, array $tags): void
+    /**
+     * Only an ErrorException carries an error level. Any other throwable is never
+     * excluded here, or configuring E_ERROR would hide every exception of a path.
+     */
+    private function isExcludedByErrorLevelAndFilePath(Throwable $throwable): bool
+    {
+        if (!$throwable instanceof ErrorException) {
+            return false;
+        }
+
+        $severity = $throwable->getSeverity();
+        $filePath = $throwable->getFile();
+        foreach ($this->excludeExceptionFilePathPrefixesByErrorLevel as $errorLevelMask => $pathPrefixes) {
+            if (($severity & $errorLevelMask) === 0) {
+                continue;
+            }
+            foreach ($pathPrefixes as $pathPrefix) {
+                $pathPrefix = preg_replace('#^(\./|/)+#', '', $pathPrefix);
+                if ($pathPrefix !== '' && str_starts_with($filePath, FLOW_PATH_ROOT . $pathPrefix)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A YAML key arrives as a string of level names, or as an integer if written as
+     * a number, which is then taken as the mask itself.
+     */
+    private function resolveErrorLevelMask(int|string $errorLevels): int
+    {
+        if (is_int($errorLevels)) {
+            if ($errorLevels > 0) {
+                return $errorLevels;
+            }
+            $this->unknownErrorLevels[] = (string)$errorLevels;
+            return 0;
+        }
+
+        $mask = 0;
+        foreach (explode('|', $errorLevels) as $constantName) {
+            $constantName = trim($constantName);
+            if (str_starts_with($constantName, 'E_') && defined($constantName) && is_int(constant($constantName))) {
+                $mask |= constant($constantName);
+            } else {
+                $this->unknownErrorLevels[] = $constantName;
+            }
+        }
+        return $mask;
+    }
+
+    /**
+     * Applies per-event data to a capture-local scope. Called inside withScope()
+     * so that nothing of this leaks into subsequent events of the same process
+     * (long-running CLI workers would otherwise accumulate stale data).
+     */
+    private function applyCaptureScope(Scope $scope, array $extraData, array $tags): void
     {
         $securityContext = Bootstrap::$staticObjectManager->get(SecurityContext::class);
         if ($securityContext instanceof SecurityContext && $securityContext->isInitialized()) {
@@ -297,15 +452,19 @@ class SentryClient
             $userContext = new UserContext();
         }
 
-        SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use ($userContext, $extraData, $tags): void {
-            foreach ($extraData as $extraDataKey => $extraDataValue) {
-                $scope->setExtra($extraDataKey, $extraDataValue);
-            }
-            foreach ($tags as $tagKey => $tagValue) {
-                $scope->setTag($tagKey, $tagValue);
-            }
-            $scope->setUser($userContext->toArray());
-        });
+        foreach ($extraData as $extraDataKey => $extraDataValue) {
+            $scope->setExtra($extraDataKey, $extraDataValue);
+        }
+        foreach ($tags as $tagKey => $tagValue) {
+            $scope->setTag($tagKey, $tagValue);
+        }
+
+        $currentSession = $this->sessionManager?->getCurrentSession();
+        if ($currentSession instanceof Session && $currentSession->isStarted()) {
+            $scope->setTag('flow_session_sha1', sha1($currentSession->getId()));
+        }
+
+        $scope->setUser($userContext->toArray());
     }
 
     private function renderCleanPathAndFilename(string $rawPathAndFilename): string

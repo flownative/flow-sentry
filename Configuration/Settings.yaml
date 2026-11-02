@@ -6,7 +6,20 @@ Flownative:
     sampleRate: 1.0
     tracesSampleRate: 0
     errorLevel: null
-    storageLogging: false
+
+    # Additional Sentry SDK client options passed to \Sentry\init(). Options set
+    # explicitly by this package (dsn, environment, release, sample rates, error
+    # level, exception excludes) always take precedence. The before_send*
+    # callbacks, ignore_exceptions and integrations cannot be set here.
+    # in_app_exclude entries are merged with the package defaults.
+    sdkOptions: {}
+
+    # Classes or interfaces whose objects, subclasses and implementers included,
+    # reach Sentry only by their class and shape (length, encoding, unusual code
+    # points), in stack frames, extra data, contexts and breadcrumbs.
+    redaction:
+      types: {}
+
     capture:
       excludeExceptionTypes:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
@@ -16,6 +29,7 @@ Flownative:
         'Neos\Flow\Property\Exception\TargetNotFoundException': true
       excludeExceptionMessagePatterns: []
       excludeExceptionCodes: []
+      excludeExceptionFilePathPrefixesByErrorLevel: []
 
 Neos:
   Flow:

@@ -95,10 +95,12 @@ Flownative:
 **Beware:** a low error log level can lead to your application not loading
 anymore and your Sentry account being flooded with error messages.
 
-Throwables (that includes exceptions and runtime errors) are logged as
-Sentry events. You may specify a list of exception types, exception message
-regular expressions or exception codes  which should not be which should not be
-recorded.
+Throwables (which include exceptions and runtime errors) are logged as Sentry events.
+You may configure some exclusions that should not be recorded:
+- Exception types
+- Exception message regular expressions
+- Exception codes
+- Exception file path prefixes (relative to the `FLOW_PATH_ROOT`) by error level
 
 ```yaml
 Flownative:
@@ -110,7 +112,26 @@ Flownative:
           - '/^Warning: fopen\(.*/'
       excludeExceptionCodes:
           - 1391972021
+      excludeExceptionFilePathPrefixesByErrorLevel:
+        'E_WARNING | E_DEPRECATED | E_USER_DEPRECATED':
+          - 'Packages/Libraries/'
 ```
+
+The file path exclusion applies to `ErrorException`s, because only these have
+an error level. That is how the Sentry SDK reports PHP warnings, notices and
+deprecations. Any other throwable is never excluded by this setting, even if
+`E_ERROR` is configured. Each key names one or more levels, separated by `|`.
+A number is taken as a bitmask, and a name which is no PHP error level leads to
+a warning in the system log when Sentry is set up.
+
+Levels listed in Flow's `Neos.Flow.error.errorHandler.exceptionalErrors` are
+reported twice: as an `ErrorException`, which this setting can exclude, and as
+the exception Flow then throws, which it cannot. The Development and Testing
+contexts of Flow list `E_WARNING` there by default.
+
+Classes proxied by Flow are reported from `Data/Temporary/`, not from their
+package, so a prefix like `Packages/Application/` does not match errors raised
+in them.
 
 By default all Flow exceptions with a status code of 404 are ignored. In case
 you want to see those in Sentry, you can include them case-by-case like so:
@@ -123,6 +144,71 @@ Flownative:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': false
         'Neos\Flow\Mvc\Exception\NoSuchControllerException': false
 ```
+
+Arbitrary SDK options can be set as well, with some options being reserved for
+internal use:
+
+```yaml
+Flownative:
+  Sentry:
+    sdkOptions:
+      max_request_body_size: 'never'
+      send_default_pii: false
+      in_app_exclude:
+        - '/path/to/Packages/Libraries/acme/package/'
+```
+
+Reserved options are:
+
+- `before_send`
+- `before_send_transaction`
+- `before_send_check_in`
+- `before_send_log`
+- `before_send_metrics`
+- `ignore_exceptions`
+- `integrations`
+- `default_integrations`
+
+## Redacting values
+
+Stack frames show objects through `__toString()` and `jsonSerialize()`, so value
+objects holding personal data or secrets reach Sentry as they are. Name the
+classes or interfaces which must not show their value:
+
+```yaml
+Flownative:
+  Sentry:
+    redaction:
+      types:
+        'Acme\Shop\Domain\PersonalData': true
+        'Acme\Shop\Domain\EmailAddress': true
+```
+
+A type matches through `instanceof`, so subclasses and implementers of an
+interface are included, and your domain code does not need to know about this
+package. An object of such a type is sent like this, in stack frames, extra
+data, contexts and breadcrumbs:
+
+```json
+{
+    "__class": "Acme\\Shop\\Domain\\EmailAddress",
+    "__shape": "16 characters, 16 bytes, UTF-8, NFC, unusual U+200B"
+}
+```
+
+The shape tells apart the empty string, broken encoding or an invisible
+character without showing the value. It is taken from the object's string form,
+else from its JSON form. An object with neither is sent with its class only.
+The `__shape` text is meant for people reading an event: its wording may change
+between releases, so do not parse it.
+
+A type that is no class or interface matches nothing, so its objects go out as
+they are. Write single backslashes in single quotes, as above. The system log
+then gets a warning when the client starts, naming the type.
+
+No type is redacted by default. Only objects are covered: a plain string
+argument is still shown, and so is the string or JSON form of an object of
+another type which holds a redacted one (`__string`, `__json`).
 
 ## Additional Data
 
@@ -172,6 +258,15 @@ Keep in mind that the breadcrumb handler provided by this package might be
 disabled when doing this, depending on your configuration. Sentry provides
 a monolog integration for that purpose, see `Sentry\Monolog\BreadcrumbHandler`
 and https://docs.sentry.io/platforms/php/integrations/monolog/. 
+
+## Running the tests
+
+The unit tests run from a Flow distribution which has this package installed
+from source:
+
+```bash
+bin/phpunit --bootstrap Packages/Libraries/autoload.php Packages/Application/Flownative.Sentry/Tests/Unit
+```
 
 ## Testing the Client
 
