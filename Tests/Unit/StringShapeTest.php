@@ -14,31 +14,26 @@ namespace Flownative\Sentry\Tests\Unit;
  */
 
 use Flownative\Sentry\StringShape;
-use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 final class StringShapeTest extends TestCase
 {
-    #[Test]
-    public function anOrdinaryStringIsDescribedByLengthAndEncoding(): void
+    public function testAnOrdinaryStringIsDescribedByLengthAndEncoding(): void
     {
         self::assertStringStartsWith('5 characters, 7 bytes, UTF-8', StringShape::of('Grüße'));
     }
 
-    #[Test]
-    public function unusualCodePointsAreNamedOnceEach(): void
+    public function testUnusualCodePointsAreNamedOnceEach(): void
     {
         self::assertStringEndsWith('unusual U+0009 U+200B U+2028', StringShape::of("a\tb\u{200B}\u{200B}\u{2028}c"));
     }
 
-    #[Test]
-    public function invalidUtf8IsCountedInBytesOnly(): void
+    public function testInvalidUtf8IsCountedInBytesOnly(): void
     {
         self::assertSame('3 bytes, not valid UTF-8', StringShape::of("a\xC3\x28"));
     }
 
-    #[Test]
-    public function manyUnusualCodePointsAreCut(): void
+    public function testManyUnusualCodePointsAreCut(): void
     {
         $value = implode('', array_map(static fn (int $codePoint): string => mb_chr($codePoint, 'UTF-8'), range(1, 12)));
 

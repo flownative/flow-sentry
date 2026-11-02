@@ -21,6 +21,7 @@ use Flownative\Sentry\Log\CaptureResult;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\Error\WithReferenceCodeInterface;
+use Neos\Flow\Log\Utility\LogEnvironment;
 use Neos\Flow\Package\Exception\UnknownPackageException;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Security\Context as SecurityContext;
@@ -144,6 +145,7 @@ class SentryClient
         );
         $this->representationSerializer->setSerializeAllObjects(true);
         $this->representationSerializer->setRedactedTypes($this->redactedTypes);
+        $this->warnAboutUnknownRedactedTypes();
         $this->stacktraceBuilder = new StacktraceBuilder(
             new Options([]),
             $this->representationSerializer
@@ -186,6 +188,17 @@ class SentryClient
             return;
         }
         $this->setTags();
+    }
+
+    private function warnAboutUnknownRedactedTypes(): void
+    {
+        try {
+            foreach ($this->representationSerializer->unknownRedactedTypes() as $type) {
+                $this->logger->warning(sprintf('Flownative.Sentry.redaction.types names "%s", which is no class or interface, so its objects are not redacted', $type), LogEnvironment::fromMethodName(__METHOD__));
+            }
+        } catch (\Throwable) {
+            // A logger that is not ready yet must not keep errors from being reported.
+        }
     }
 
     /**

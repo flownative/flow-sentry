@@ -149,8 +149,8 @@ Flownative:
   Sentry:
     redaction:
       types:
-        'Acme\\Shop\\Domain\\PersonalData': true
-        'Acme\\Shop\\Domain\\EmailAddress': true
+        'Acme\Shop\Domain\PersonalData': true
+        'Acme\Shop\Domain\EmailAddress': true
 ```
 
 A type matches through `instanceof`, so subclasses and implementers of an
@@ -169,8 +169,13 @@ The shape tells apart the empty string, broken encoding or an invisible
 character without showing the value. It is taken from the object's string form,
 else from its JSON form. An object with neither is sent with its class only.
 
+A type that is no class or interface matches nothing, so its objects go out as
+they are. Write single backslashes in single quotes, as above. The system log
+then gets a warning when the client starts, naming the type.
+
 No type is redacted by default. Only objects are covered: a plain string
-argument is still shown, and so is a stringable object holding a redacted one.
+argument is still shown, and so is the string or JSON form of an object of
+another type which holds a redacted one (`__string`, `__json`).
 
 ## Additional Data
 

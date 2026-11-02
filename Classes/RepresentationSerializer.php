@@ -56,7 +56,19 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
     }
 
     /**
+     * @return list<string> the configured types which are no class or interface, so they match nothing
+     */
+    public function unknownRedactedTypes(): array
+    {
+        return array_values(array_filter(
+            $this->redactedTypes,
+            static fn (string $type): bool => !class_exists($type) && !interface_exists($type)
+        ));
+    }
+
+    /**
      * Applies the redacted types to what the SDK would otherwise encode as it is: extra data, contexts and breadcrumbs.
+     * On a failure the data stays out of the event, and the error being reported still goes out.
      */
     public function redactEvent(Event $event): Event
     {
@@ -64,17 +76,25 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
             return $event;
         }
 
-        $event->setExtra($this->redact($event->getExtra()));
-        foreach ($event->getContexts() as $name => $context) {
-            $event->setContext($name, $this->redact($context));
-        }
-        $event->setBreadcrumb(array_map(function (Breadcrumb $breadcrumb): Breadcrumb {
-            foreach ($breadcrumb->getMetadata() as $name => $value) {
-                $breadcrumb = $breadcrumb->withMetadata($name, $this->redact($value));
+        try {
+            $event->setExtra($this->redact($event->getExtra()));
+            foreach ($event->getContexts() as $name => $context) {
+                $event->setContext((string)$name, $this->redact($context));
             }
+            $event->setBreadcrumb(array_map(function (Breadcrumb $breadcrumb): Breadcrumb {
+                foreach ($breadcrumb->getMetadata() as $name => $value) {
+                    $breadcrumb = $breadcrumb->withMetadata((string)$name, $this->redact($value));
+                }
 
-            return $breadcrumb;
-        }, $event->getBreadcrumbs()));
+                return $breadcrumb;
+            }, $event->getBreadcrumbs()));
+        } catch (\Throwable) {
+            $event->setExtra([]);
+            foreach (array_keys($event->getContexts()) as $name) {
+                $event->setContext((string)$name, ['__redaction' => 'failed']);
+            }
+            $event->setBreadcrumb([]);
+        }
 
         return $event;
     }
