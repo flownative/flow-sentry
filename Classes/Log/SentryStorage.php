@@ -5,10 +5,12 @@ namespace Flownative\Sentry\Log;
 
 use Flownative\Sentry\SentryClientTrait;
 use Neos\Flow\Annotations as Flow;
+use Neos\Flow\Log\ThrowableStorage\FileStorage;
 use Neos\Flow\Log\ThrowableStorageInterface;
 
 /**
- * Captures a throwable to Sentry.
+ * Captures a throwable to Sentry and writes a dump file through Flow's FileStorage
+ * if the option writeDumpFiles asks for it or capturing fails.
  *
  * @phpstan-consistent-constructor
  * @Flow\Proxy(false)
@@ -18,6 +20,10 @@ class SentryStorage implements ThrowableStorageInterface
 {
     use SentryClientTrait;
 
+    private array $options = [];
+    private ?\Closure $requestInformationRenderer = null;
+    private ?\Closure $backtraceRenderer = null;
+
     /**
      * Factory method to get an instance.
      *
@@ -26,7 +32,9 @@ class SentryStorage implements ThrowableStorageInterface
      */
     public static function createWithOptions(array $options): ThrowableStorageInterface
     {
-        return new static();
+        $storage = new static();
+        $storage->options = $options;
+        return $storage;
     }
 
     /**
@@ -35,6 +43,7 @@ class SentryStorage implements ThrowableStorageInterface
      */
     public function setRequestInformationRenderer(\Closure $requestInformationRenderer): ThrowableStorageInterface
     {
+        $this->requestInformationRenderer = $requestInformationRenderer;
         return $this;
     }
 
@@ -44,6 +53,7 @@ class SentryStorage implements ThrowableStorageInterface
      */
     public function setBacktraceRenderer(\Closure $backtraceRenderer): ThrowableStorageInterface
     {
+        $this->backtraceRenderer = $backtraceRenderer;
         return $this;
     }
 
@@ -61,23 +71,45 @@ class SentryStorage implements ThrowableStorageInterface
      */
     public function logThrowable(\Throwable $throwable, array $additionalData = []): string
     {
-        $message = $this->getErrorLogMessage($throwable);
+        $captured = false;
+        $sentryMessage = 'no client available';
         try {
             if ($sentryClient = self::getSentryClient()) {
                 $captureResult = $sentryClient->captureThrowable($throwable, $additionalData);
-
-                return sprintf(
-                    '%s (Sentry: %s – %s)',
-                    $message,
+                $captured = $captureResult->suceess;
+                $sentryMessage = sprintf(
+                    '%s – %s',
                     $captureResult->eventId ? '#' . $captureResult->eventId : 'no ID',
-                    $captureResult->message ?: ($captureResult->suceess ? 'ok' : 'failed'),
+                    $captureResult->message ?: ($captured ? 'ok' : 'failed'),
                 );
             }
         } catch (\Throwable $e) {
-            return $message . ' (Sentry: Error capturing message – ' . $this->getErrorLogMessage($e);
+            $sentryMessage = 'Error capturing message – ' . $this->getErrorLogMessage($e);
         }
 
-        return $message . '(Sentry: no client available)';
+        $message = !$captured || ($this->options['writeDumpFiles'] ?? false)
+            ? $this->writeDumpFile($throwable, $additionalData)
+            : $this->getErrorLogMessage($throwable);
+
+        return sprintf('%s (Sentry: %s)', $message, $sentryMessage);
+    }
+
+    private function writeDumpFile(\Throwable $throwable, array $additionalData): string
+    {
+        try {
+            $fileStorage = FileStorage::createWithOptions($this->options);
+            if ($this->requestInformationRenderer !== null) {
+                $fileStorage->setRequestInformationRenderer($this->requestInformationRenderer);
+            }
+            if ($this->backtraceRenderer !== null) {
+                $fileStorage->setBacktraceRenderer($this->backtraceRenderer);
+            }
+            $message = $fileStorage->logThrowable($throwable, $additionalData);
+            // FileStorage answers an unwritable directory with a message that omits the throwable.
+            return str_contains($message, ' - See also: ') ? $message : $this->getErrorLogMessage($throwable) . ' – ' . $message;
+        } catch (\Throwable $e) {
+            return $this->getErrorLogMessage($throwable) . ' – Could not write a dump file: ' . $e->getMessage();
+        }
     }
 
     protected function getErrorLogMessage(\Throwable $error): string

@@ -42,4 +42,7 @@ Neos:
       throwables:
         storageClass: 'Flownative\Sentry\Log\SentryStorage'
         optionsByImplementation:
-          'Flownative\Sentry\Log\SentryStorage': []
+          'Flownative\Sentry\Log\SentryStorage':
+            writeDumpFiles: false
+            maximumThrowableDumpAge: 2592000
+            maximumThrowableDumpCount: 10000

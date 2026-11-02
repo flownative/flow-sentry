@@ -81,6 +81,7 @@ class SentryClient
     protected array $redactedTypes = [];
     protected ?RepresentationSerializer $representationSerializer = null;
     protected ?StacktraceBuilder $stacktraceBuilder = null;
+    private bool $eventPassedFilters = false;
 
     /**
      * @Flow\Inject
@@ -182,7 +183,7 @@ class SentryClient
             'release' => $this->release,
             'sample_rate' => $this->sampleRate,
             'traces_sample_rate' => $this->tracesSampleRate,
-            'ignore_exceptions' => array_keys(array_filter($this->excludeExceptionTypes)),
+            'ignore_exceptions' => array_map('strval', array_keys(array_filter($this->excludeExceptionTypes))),
             'in_app_exclude' => $inAppExclude,
             'attach_stacktrace' => true,
             'error_types' => $this->errorLevel,
@@ -191,6 +192,7 @@ class SentryClient
                 if ($hasThrowableAndShouldSkip) {
                     return null;
                 }
+                $this->eventPassedFilters = true;
 
                 return $this->representationSerializer->redactEvent($event);
             },
@@ -317,14 +319,18 @@ class SentryClient
         $this->addThrowableToEvent($throwable, $event);
 
         $sentryEventId = null;
+        $this->eventPassedFilters = false;
         SentrySdk::getCurrentHub()->withScope(function (Scope $scope) use ($event, $extraData, $tags, &$sentryEventId): void {
             $this->applyCaptureScope($scope, $extraData, $tags);
             $sentryEventId = SentrySdk::getCurrentHub()->captureEvent($event);
         });
 
+        // Without an ID, an event the SDK did not filter or sample away was not delivered.
+        $delivered = $sentryEventId !== null || !$this->eventPassedFilters;
+
         return new CaptureResult(
-            true,
-            '',
+            $delivered,
+            $delivered ? '' : 'Failed sending the event to Sentry.',
             (string)$sentryEventId
         );
     }
