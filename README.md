@@ -168,6 +168,8 @@ data, contexts and breadcrumbs:
 The shape tells apart the empty string, broken encoding or an invisible
 character without showing the value. It is taken from the object's string form,
 else from its JSON form. An object with neither is sent with its class only.
+The `__shape` text is meant for people reading an event: its wording may change
+between releases, so do not parse it.
 
 A type that is no class or interface matches nothing, so its objects go out as
 they are. Write single backslashes in single quotes, as above. The system log
