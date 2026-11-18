@@ -14,6 +14,12 @@ Flownative:
     # in_app_exclude entries are merged with the package defaults.
     sdkOptions: {}
 
+    # Classes or interfaces whose objects, subclasses and implementers included,
+    # reach Sentry only by their class and shape (length, encoding, unusual code
+    # points), in stack frames, extra data, contexts and breadcrumbs.
+    redaction:
+      types: {}
+
     capture:
       excludeExceptionTypes:
         'Neos\Flow\Mvc\Controller\Exception\InvalidControllerException': true
@@ -23,6 +29,7 @@ Flownative:
         'Neos\Flow\Property\Exception\TargetNotFoundException': true
       excludeExceptionMessagePatterns: []
       excludeExceptionCodes: []
+      excludeExceptionFilePathPrefixesByErrorLevel: []
 
 Neos:
   Flow:
@@ -35,4 +42,7 @@ Neos:
       throwables:
         storageClass: 'Flownative\Sentry\Log\SentryStorage'
         optionsByImplementation:
-          'Flownative\Sentry\Log\SentryStorage': []
+          'Flownative\Sentry\Log\SentryStorage':
+            writeDumpFiles: false
+            maximumThrowableDumpAge: 2592000
+            maximumThrowableDumpCount: 10000
