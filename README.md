@@ -289,9 +289,6 @@ from source:
 bin/phpunit --bootstrap Packages/Libraries/autoload.php Packages/Application/Flownative.Sentry/Tests/Unit
 ```
 
-Run the Eel context regression tests with Eel 8.x to cover its string conversion
-warning, and with Eel 9.x to verify compatibility. No Sentry server is needed.
-
 ## Testing the Client
 
 This package provides a command controller which allows you to log a
