@@ -16,6 +16,8 @@ namespace Flownative\Sentry\Tests\Unit;
 use Flownative\Sentry\RepresentationSerializer;
 use Flownative\Sentry\StringShape;
 use JsonSerializable;
+use Neos\Eel\Context;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Sentry\Breadcrumb;
 use Sentry\Event;
@@ -292,6 +294,102 @@ final class RepresentationSerializerTest extends TestCase
         $serializer = $this->serializer([MarksPersonalData::class, FullName::class, 'Flownative\\\\Sentry\\\\StringShape', 'Acme\Shop\Nothing']);
 
         self::assertSame(['Flownative\\\\Sentry\\\\StringShape', 'Acme\Shop\Nothing'], $serializer->unknownRedactedTypes());
+    }
+
+    #[Test]
+    public function testEelContextsKeepTheirClassWithoutSecondaryWarnings(): void
+    {
+        if (!class_exists(Context::class)) {
+            self::markTestSkipped('Install neos/eel to test Eel context serialization.');
+        }
+        $serializer = $this->serializer([]);
+        $expected = method_exists(Context::class, '__toString')
+            ? 'Object ' . Context::class
+            : ['__class ' => Context::class];
+
+
+        $results = $this->withoutPhpWarnings(static function () use ($serializer): array {
+            $results = [];
+            foreach ([['fixture' => 'value'], [], 'text', 42, false, null] as $value) {
+                $results[] = $serializer->representationSerialize(new Context($value));
+            }
+            $recursive = new Context([]);
+            $recursive->push($recursive);
+            $results[] = $serializer->representationSerialize($recursive);
+            return $results;
+        });
+
+
+        self::assertSame(array_fill(0, 7, $expected), $results);
+    }
+
+    #[Test]
+    public function testStringableEelSubclassesAreNeverEvaluated(): void
+    {
+        if (!class_exists(Context::class)) {
+            self::markTestSkipped('Install neos/eel to test Eel context serialization.');
+        }
+        $context = new class ([]) extends Context {
+            public int $conversions = 0;
+
+            public function __toString(): string
+            {
+                $this->conversions++;
+                throw new \LogicException('Eel context must not be evaluated');
+            }
+        };
+
+
+        $serialized = $this->serializer([])->representationSerialize($context);
+        $redacted = $this->serializer([Context::class])->representationSerialize($context);
+
+
+        self::assertSame('Object ' . get_class($context), $serialized);
+        self::assertSame(['__class' => get_class($context)], $redacted);
+        self::assertSame(0, $context->conversions);
+    }
+
+    #[Test]
+    public function testRedactedEelContextsDoNotEmitWarningsOrDiscardEventData(): void
+    {
+        if (!class_exists(Context::class)) {
+            self::markTestSkipped('Install neos/eel to test Eel context serialization.');
+        }
+        $serializer = $this->serializer([Context::class]);
+        $context = new Context(['fixture' => 'value']);
+        $event = Event::createEvent();
+        $event->setExtra(['context' => $context, 'count' => 3]);
+        $event->setContext('fixture', ['context' => $context]);
+        $event->setBreadcrumb([new Breadcrumb(Breadcrumb::LEVEL_INFO, Breadcrumb::TYPE_DEFAULT, 'test', 'Fixture', ['context' => $context])]);
+
+
+        $serialized = $this->withoutPhpWarnings(static function () use ($serializer, $context, $event) {
+            $serializer->redactEvent($event);
+            return $serializer->representationSerialize($context);
+        });
+
+
+        self::assertSame(['__class' => Context::class], $serialized);
+        self::assertSame(['context' => $serialized, 'count' => 3], $event->getExtra());
+        self::assertSame(['fixture' => ['context' => $serialized]], $event->getContexts());
+        self::assertSame(['context' => $serialized], $event->getBreadcrumbs()[0]->getMetadata());
+    }
+
+    private function withoutPhpWarnings(callable $operation): mixed
+    {
+        $warnings = [];
+        set_error_handler(static function (int $severity, string $message, string $file, int $line) use (&$warnings): never {
+            // The SDK catches exceptions, so record warnings before converting them.
+            $warnings[] = $message;
+            throw new \ErrorException($message, 0, $severity, $file, $line);
+        });
+        try {
+            $result = $operation();
+        } finally {
+            restore_error_handler();
+        }
+        self::assertSame([], $warnings);
+        return $result;
     }
 
     /**

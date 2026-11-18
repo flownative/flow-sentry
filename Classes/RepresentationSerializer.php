@@ -125,11 +125,6 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
             return $this->serializeValue($object);
         }
 
-        // Eel contexts may wrap arrays; evaluating __toString() can raise a secondary warning.
-        if ($object instanceof Context) {
-            return $this->serializeValue($object);
-        }
-
         // Try each serializer until there is none left or the serializer returned data
         $classSerializers = $this->getClassSerializers();
         foreach ($classSerializers as $targetType => $classSerializer) {
@@ -141,6 +136,11 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
         }
 
         if ($object instanceof \Stringable || is_callable([$object, '__toString'])) {
+            // Flow 8 Eel contexts can wrap arrays which cannot safely be cast to strings.
+            if ($object instanceof Context) {
+                return $this->serializeValue($object);
+            }
+
             $serializedObject = [
                 '__class' => get_class($object),
                 '__string' => (string)$object
@@ -201,6 +201,10 @@ class RepresentationSerializer extends \Sentry\Serializer\RepresentationSerializ
         $representation = ['__class' => get_class($object)];
         try {
             if ($object instanceof \Stringable || is_callable([$object, '__toString'])) {
+                if ($object instanceof Context) {
+                    return $representation;
+                }
+
                 $representation['__shape'] = StringShape::of((string)$object);
             } elseif ($object instanceof \JsonSerializable) {
                 $representation['__shape'] = StringShape::of(json_encode($object, JSON_THROW_ON_ERROR));

@@ -14,6 +14,8 @@ namespace Flownative\Sentry\Tests\Unit;
  */
 
 use Flownative\Sentry\SentryClient;
+use Neos\Eel\Context;
+use PHPUnit\Framework\Attributes\Test;
 use Neos\Flow\Core\ApplicationContext;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\ObjectManagement\ObjectManagerInterface;
@@ -100,15 +102,64 @@ final class SentryClientCaptureResultTest extends TestCase
         self::assertTrue($result->suceess);
     }
 
-    private function clientWithServerAnswering(bool $accepted, array $settings = []): SentryClient
+    #[Test]
+    public function testAnExceptionWithAnEelArgumentReachesTheTransport(): void
     {
-        $transport = new class ($accepted) implements TransportInterface {
-            public function __construct(private readonly bool $accepted)
+        if (!class_exists(Context::class)) {
+            self::markTestSkipped('Install neos/eel to test Eel exception arguments.');
+        }
+        $capturedEvent = null;
+        $client = $this->clientWithServerAnswering(true, [], static function (Event $event) use (&$capturedEvent): void {
+            $capturedEvent = $event;
+        });
+        $previousIgnoreArgs = ini_set('zend.exception_ignore_args', '0');
+        $warnings = [];
+        set_error_handler(static function (int $severity, string $message, string $file, int $line) use (&$warnings): never {
+            $warnings[] = $message;
+            throw new \ErrorException($message, 0, $severity, $file, $line);
+        });
+        $throwWithContext = static function (Context $context): never {
+            throw new RuntimeException('Original failure', 0, new \LogicException('Previous failure'));
+        };
+
+
+        try {
+            try {
+                $throwWithContext(new Context(['fixture' => 'value']));
+            } catch (RuntimeException $exception) {
+                $result = $client->captureThrowable($exception);
+            }
+        } finally {
+            restore_error_handler();
+            ini_set('zend.exception_ignore_args', $previousIgnoreArgs);
+        }
+
+
+        self::assertSame([], $warnings);
+        self::assertTrue($result->suceess);
+        self::assertInstanceOf(Event::class, $capturedEvent);
+        $exceptions = $capturedEvent->getExceptions();
+        self::assertSame(
+            [[RuntimeException::class, 'Original failure'], [\LogicException::class, 'Previous failure']],
+            array_map(static fn ($exception): array => [$exception->getType(), $exception->getValue()], $exceptions)
+        );
+        $arguments = array_merge([], ...array_map(static fn ($frame): array => $frame->getVars(), $exceptions[0]->getStacktrace()->getFrames()));
+        $expected = method_exists(Context::class, '__toString')
+            ? 'Object ' . Context::class
+            : ['__class ' => Context::class];
+        self::assertContains($expected, $arguments);
+    }
+
+    private function clientWithServerAnswering(bool $accepted, array $settings = [], ?\Closure $onSend = null): SentryClient
+    {
+        $transport = new class ($accepted, $onSend) implements TransportInterface {
+            public function __construct(private readonly bool $accepted, private readonly ?\Closure $onSend)
             {
             }
 
             public function send(Event $event): Result
             {
+                ($this->onSend)?->__invoke($event);
                 return $this->accepted ? new Result(ResultStatus::success(), $event) : new Result(ResultStatus::failed());
             }
 
