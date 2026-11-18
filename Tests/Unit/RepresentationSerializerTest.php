@@ -17,7 +17,7 @@ use Flownative\Sentry\RepresentationSerializer;
 use Flownative\Sentry\StringShape;
 use JsonSerializable;
 use Neos\Eel\Context;
-use PHPUnit\Framework\Attributes\Test;
+use Neos\Eel\ProtectedContext;
 use PHPUnit\Framework\TestCase;
 use Sentry\Breadcrumb;
 use Sentry\Event;
@@ -296,16 +296,12 @@ final class RepresentationSerializerTest extends TestCase
         self::assertSame(['Flownative\\\\Sentry\\\\StringShape', 'Acme\Shop\Nothing'], $serializer->unknownRedactedTypes());
     }
 
-    #[Test]
     public function testEelContextsKeepTheirClassWithoutSecondaryWarnings(): void
     {
-        if (!class_exists(Context::class)) {
-            self::markTestSkipped('Install neos/eel to test Eel context serialization.');
-        }
         $serializer = $this->serializer([]);
-        $expected = method_exists(Context::class, '__toString')
-            ? 'Object ' . Context::class
-            : ['__class ' => Context::class];
+        $expected = static fn (string $class): string|array => method_exists($class, '__toString')
+            ? 'Object ' . $class
+            : ['__class ' => $class];
 
 
         $results = $this->withoutPhpWarnings(static function () use ($serializer): array {
@@ -316,19 +312,16 @@ final class RepresentationSerializerTest extends TestCase
             $recursive = new Context([]);
             $recursive->push($recursive);
             $results[] = $serializer->representationSerialize($recursive);
+            $results[] = $serializer->representationSerialize(new ProtectedContext(['fixture' => 'value']));
             return $results;
         });
 
 
-        self::assertSame(array_fill(0, 7, $expected), $results);
+        self::assertSame([...array_fill(0, 7, $expected(Context::class)), $expected(ProtectedContext::class)], $results);
     }
 
-    #[Test]
     public function testStringableEelSubclassesAreNeverEvaluated(): void
     {
-        if (!class_exists(Context::class)) {
-            self::markTestSkipped('Install neos/eel to test Eel context serialization.');
-        }
         $context = new class ([]) extends Context {
             public int $conversions = 0;
 
@@ -349,12 +342,8 @@ final class RepresentationSerializerTest extends TestCase
         self::assertSame(0, $context->conversions);
     }
 
-    #[Test]
-    public function testRedactedEelContextsDoNotEmitWarningsOrDiscardEventData(): void
+    public function testRedactedEelContextsAreShownByClassWithoutWarnings(): void
     {
-        if (!class_exists(Context::class)) {
-            self::markTestSkipped('Install neos/eel to test Eel context serialization.');
-        }
         $serializer = $this->serializer([Context::class]);
         $context = new Context(['fixture' => 'value']);
         $event = Event::createEvent();

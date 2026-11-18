@@ -15,7 +15,6 @@ namespace Flownative\Sentry\Tests\Unit;
 
 use Flownative\Sentry\SentryClient;
 use Neos\Eel\Context;
-use PHPUnit\Framework\Attributes\Test;
 use Neos\Flow\Core\ApplicationContext;
 use Neos\Flow\Core\Bootstrap;
 use Neos\Flow\ObjectManagement\ObjectManagerInterface;
@@ -102,12 +101,8 @@ final class SentryClientCaptureResultTest extends TestCase
         self::assertTrue($result->suceess);
     }
 
-    #[Test]
-    public function testAnExceptionWithAnEelArgumentReachesTheTransport(): void
+    public function testAnEelArgumentIsCapturedWithoutSecondaryWarnings(): void
     {
-        if (!class_exists(Context::class)) {
-            self::markTestSkipped('Install neos/eel to test Eel exception arguments.');
-        }
         $capturedEvent = null;
         $client = $this->clientWithServerAnswering(true, [], static function (Event $event) use (&$capturedEvent): void {
             $capturedEvent = $event;
